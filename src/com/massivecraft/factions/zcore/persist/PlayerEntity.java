@@ -9,14 +9,21 @@ public class PlayerEntity extends Entity
 {
 	public Player getPlayer()
 	{
-		return Bukkit.getPlayer(this.getId());
+		return Bukkit.getPlayerExact(this.getId());
 	}
 	
 	public boolean isOnline()
 	{
 		return this.getPlayer() != null;
 	}
-	
+
+	// make sure target player should be able to detect that this player is online
+	public boolean isOnlineAndVisibleTo(Player player)
+	{
+		Player target = this.getPlayer();
+		return target != null && player.canSee(target);
+	}
+
 	public boolean isOffline()
 	{
 		return ! isOnline();

@@ -5,13 +5,9 @@ import java.lang.reflect.Type;
 import java.util.*;
 import java.util.Map.Entry;
 import java.util.logging.Level;
-import java.util.logging.Logger;
 
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
-import org.bukkit.event.Event;
-import org.bukkit.event.Listener;
-import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import com.google.gson.Gson;
@@ -37,8 +33,10 @@ public abstract class MPlugin extends JavaPlugin
 	public Gson gson;	
 	private Integer saveTask = null;
 	private boolean autoSave = true;
+	protected boolean loadSuccessful = false;
 	public boolean getAutoSave() {return this.autoSave;}
 	public void setAutoSave(boolean val) {this.autoSave = val;}
+	public String refCommand = "";
 	
 	// Listeners
 	private MPluginSecretPlayerListener mPluginSecretPlayerListener; 
@@ -64,21 +62,29 @@ public abstract class MPlugin extends JavaPlugin
 		this.perm = new PermUtil(this);
 		this.persist = new Persist(this);
 		this.lib = new LibLoader(this);
-		
-		if ( ! lib.require("gson.jar", "http://search.maven.org/remotecontent?filepath=com/google/code/gson/gson/1.7.1/gson-1.7.1.jar")) return false;
+
+		// GSON 2.1 is now embedded in CraftBukkit, used by the auto-updater: https://github.com/Bukkit/CraftBukkit/commit/0ed1d1fdbb1e0bc09a70bc7bfdf40c1de8411665
+//		if ( ! lib.require("gson.jar", "http://search.maven.org/remotecontent?filepath=com/google/code/gson/gson/2.1/gson-2.1.jar")) return false;
 		this.gson = this.getGsonBuilder().create();
 		
 		this.txt = new TextUtil();
 		initTXT();
-		
+
+		// attempt to get first command defined in plugin.yml as reference command, if any commands are defined in there
+		// reference command will be used to prevent "unknown command" console messages
+		try
+		{
+			Map<String, Map<String, Object>> refCmd = this.getDescription().getCommands();
+			if (refCmd != null && !refCmd.isEmpty())
+				this.refCommand = (String)(refCmd.keySet().toArray()[0]);
+		}
+		catch (ClassCastException ex) {}
+
 		// Create and register listeners
 		this.mPluginSecretPlayerListener = new MPluginSecretPlayerListener(this);
 		this.mPluginSecretServerListener = new MPluginSecretServerListener(this);
-		PluginManager pm = this.getServer().getPluginManager();
-		pm.registerEvent(Event.Type.PLAYER_PRELOGIN, this.mPluginSecretPlayerListener, Event.Priority.Lowest, this);
-		pm.registerEvent(Event.Type.PLAYER_CHAT, this.mPluginSecretPlayerListener, Event.Priority.Low, this);
-		pm.registerEvent(Event.Type.PLAYER_COMMAND_PREPROCESS, this.mPluginSecretPlayerListener, Event.Priority.Lowest, this);
-		pm.registerEvent(Event.Type.SERVER_COMMAND, this.mPluginSecretServerListener, Event.Priority.Lowest, this);
+		getServer().getPluginManager().registerEvents(this.mPluginSecretPlayerListener, this);
+		getServer().getPluginManager().registerEvents(this.mPluginSecretServerListener, this);
 		
 		
 		// Register recurring tasks
@@ -87,7 +93,8 @@ public abstract class MPlugin extends JavaPlugin
 		{
 			saveTask = Bukkit.getServer().getScheduler().scheduleSyncRepeatingTask(this, new SaveTask(this), saveTicks, saveTicks);
 		}
-		
+
+		loadSuccessful = true;
 		return true;
 	}
 	
@@ -103,7 +110,9 @@ public abstract class MPlugin extends JavaPlugin
 			this.getServer().getScheduler().cancelTask(saveTask);
 			saveTask = null;
 		}
-		EM.saveAllToDisc();
+		// only save data if plugin actually loaded successfully
+		if (loadSuccessful)
+			EM.saveAllToDisc();
 		log("Disabled");
 	}
 	
@@ -113,20 +122,6 @@ public abstract class MPlugin extends JavaPlugin
 		this.getServer().getPluginManager().disablePlugin(this);
 	}
 
-	// -------------------------------------------- //
-	// Register Event convenience method
-	// -------------------------------------------- //
-	
-	public void registerEvent(Event.Type type, Listener listener, Event.Priority priority)
-	{
-		Bukkit.getServer().getPluginManager().registerEvent(type, listener, priority, this);
-	}
-	
-	public void registerEvent(Event.Type type, Listener listener)
-	{
-		registerEvent(type, listener, Event.Priority.Normal);
-	}
-	
 	// -------------------------------------------- //
 	// Some inits...
 	// You are supposed to override these in the plugin if you aren't satisfied with the defaults
@@ -183,6 +178,12 @@ public abstract class MPlugin extends JavaPlugin
 	// COMMAND HANDLING
 	// -------------------------------------------- //
 
+	// can be overridden by P method, to provide option
+	public boolean logPlayerCommands()
+	{
+		return true;
+	}
+
 	public boolean handleCommand(CommandSender sender, String commandString, boolean testOnly)
 	{
 		boolean noSlash = true;
@@ -198,6 +199,9 @@ public abstract class MPlugin extends JavaPlugin
 			
 			for (String alias : command.aliases)
 			{
+				// disallow double-space after alias, so specific commands can be prevented (preventing "f home" won't prevent "f  home")
+				if (commandString.startsWith(alias+"  ")) return false;
+
 				if (commandString.startsWith(alias+" ") || commandString.equals(alias))
 				{
 					List<String> args = new ArrayList<String>(Arrays.asList(commandString.split("\\s+")));
@@ -236,9 +240,19 @@ public abstract class MPlugin extends JavaPlugin
 	{
 		log(Level.INFO, msg);
 	}
-	
+
+	public void log(String str, Object... args)
+	{
+		log(Level.INFO, this.txt.parse(str, args));
+	}
+
+	public void log(Level level, String str, Object... args)
+	{
+		log(level, this.txt.parse(str, args));
+	}
+
 	public void log(Level level, Object msg)
 	{
-		Logger.getLogger("Minecraft").log(level, "["+this.getDescription().getFullName()+"] "+msg);
+		Bukkit.getLogger().log(level, "["+this.getDescription().getFullName()+"] "+msg);
 	}
 }

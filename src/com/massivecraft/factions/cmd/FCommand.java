@@ -12,7 +12,9 @@ import com.massivecraft.factions.FPlayers;
 import com.massivecraft.factions.Faction;
 import com.massivecraft.factions.Factions;
 import com.massivecraft.factions.P;
-import com.massivecraft.factions.struct.Role;
+import com.massivecraft.factions.struct.FFlag;
+import com.massivecraft.factions.struct.FPerm;
+import com.massivecraft.factions.struct.Rel;
 import com.massivecraft.factions.zcore.MCommand;
 
 
@@ -23,8 +25,8 @@ public abstract class FCommand extends MCommand<P>
 	public FPlayer fme;
 	public Faction myFaction;
 	public boolean senderMustBeMember;
-	public boolean senderMustBeModerator;
-	public boolean senderMustBeAdmin;
+	public boolean senderMustBeOfficer;
+	public boolean senderMustBeLeader;
 	
 	public boolean isMoneyCommand;
 	
@@ -39,8 +41,8 @@ public abstract class FCommand extends MCommand<P>
 		isMoneyCommand = false;
 		
 		senderMustBeMember = false;
-		senderMustBeModerator = false;
-		senderMustBeAdmin = false;
+		senderMustBeOfficer = false;
+		senderMustBeLeader = false;
 	}
 	
 	@Override
@@ -89,7 +91,7 @@ public abstract class FCommand extends MCommand<P>
 		boolean superValid = super.validSenderType(sender, informSenderIfNot);
 		if ( ! superValid) return false;
 		
-		if ( ! (this.senderMustBeMember || this.senderMustBeModerator || this.senderMustBeAdmin)) return true;
+		if ( ! (this.senderMustBeMember || this.senderMustBeOfficer || this.senderMustBeLeader)) return true;
 		
 		if ( ! (sender instanceof Player)) return false;
 		
@@ -101,13 +103,13 @@ public abstract class FCommand extends MCommand<P>
 			return false;
 		}
 		
-		if (this.senderMustBeModerator && ! fplayer.getRole().isAtLeast(Role.MODERATOR))
+		if (this.senderMustBeOfficer && ! fplayer.getRole().isAtLeast(Rel.OFFICER))
 		{
 			sender.sendMessage(p.txt.parse("<b>Only faction moderators can %s.", this.getHelpShort()));
 			return false;
 		}
 		
-		if (this.senderMustBeAdmin && ! fplayer.getRole().isAtLeast(Role.ADMIN))
+		if (this.senderMustBeLeader && ! fplayer.getRole().isAtLeast(Rel.LEADER))
 		{
 			sender.sendMessage(p.txt.parse("<b>Only faction admins can %s.", this.getHelpShort()));
 			return false;
@@ -132,11 +134,11 @@ public abstract class FCommand extends MCommand<P>
 		return true;
 	}
 
-	public boolean assertMinRole(Role role)
+	public boolean assertMinRole(Rel role)
 	{
 		if (me == null) return true;
 		
-		if (fme.getRole().value < role.value)
+		if (fme.getRole().isLessThan(role))
 		{
 			msg("<b>You <h>must be "+role+"<b> to "+this.getHelpShort()+".");
 			return false;
@@ -148,15 +150,14 @@ public abstract class FCommand extends MCommand<P>
 	// Argument Readers
 	// -------------------------------------------- //
 	
-	// ARG AS FPLAYER
-	public FPlayer argAsFPlayer(int idx, FPlayer def, boolean msg)
+	// FPLAYER ======================
+	public FPlayer strAsFPlayer(String name, FPlayer def, boolean msg)
 	{
 		FPlayer ret = def;
 		
-		String name = this.argAsString(idx);
 		if (name != null)
 		{
-			FPlayer fplayer = FPlayers.i.get(name); 
+			FPlayer fplayer = FPlayers.i.get(name);
 			if (fplayer != null)
 			{
 				ret = fplayer;
@@ -165,10 +166,14 @@ public abstract class FCommand extends MCommand<P>
 		
 		if (msg && ret == null)
 		{
-			this.sendMessage(p.txt.parse("<b>The player \"<p>%s<b>\" could not be found.", name));
+			this.msg("<b>No player \"<p>%s<b>\" could be found.", name);			
 		}
 		
 		return ret;
+	}
+	public FPlayer argAsFPlayer(int idx, FPlayer def, boolean msg)
+	{
+		return this.strAsFPlayer(this.argAsString(idx), def, msg);
 	}
 	public FPlayer argAsFPlayer(int idx, FPlayer def)
 	{
@@ -179,15 +184,14 @@ public abstract class FCommand extends MCommand<P>
 		return this.argAsFPlayer(idx, null);
 	}
 	
-	// ARG AS BEST FPLAYER MATCH
-	public FPlayer argAsBestFPlayerMatch(int idx, FPlayer def, boolean msg)
+	// BEST FPLAYER MATCH ======================
+	public FPlayer strAsBestFPlayerMatch(String name, FPlayer def, boolean msg)
 	{
 		FPlayer ret = def;
 		
-		String name = this.argAsString(idx);
 		if (name != null)
 		{
-			FPlayer fplayer = FPlayers.i.find(name);
+			FPlayer fplayer = FPlayers.i.getBestIdMatch(name);
 			if (fplayer != null)
 			{
 				ret = fplayer;
@@ -196,10 +200,14 @@ public abstract class FCommand extends MCommand<P>
 		
 		if (msg && ret == null)
 		{
-			this.sendMessage(p.txt.parse("<b>The player \"<p>%s<b>\" could not be found.", name));
+			this.msg("<b>No player match found for \"<p>%s<b>\".", name);
 		}
 		
 		return ret;
+	}
+	public FPlayer argAsBestFPlayerMatch(int idx, FPlayer def, boolean msg)
+	{
+		return this.strAsBestFPlayerMatch(this.argAsString(idx), def, msg);
 	}
 	public FPlayer argAsBestFPlayerMatch(int idx, FPlayer def)
 	{
@@ -210,36 +218,53 @@ public abstract class FCommand extends MCommand<P>
 		return this.argAsBestFPlayerMatch(idx, null);
 	}
 	
-	// ARG AS FACTION
-	public Faction argAsFaction(int idx, Faction def, boolean msg)
+	// FACTION ======================
+	public Faction strAsFaction(String name, Faction def, boolean msg)
 	{
 		Faction ret = def;
 		
-		String name = this.argAsString(idx);
 		if (name != null)
 		{
-			// First we search faction names
-			Faction faction = Factions.i.findByTag(name);
+			Faction faction = null;
+			
+			// First we try an exact match
+			if (faction == null)
+			{
+				faction = Factions.i.getByTag(name);
+			}
+			
+			// Next we match faction tags
+			if (faction == null)
+			{
+				faction = Factions.i.getBestTagMatch(name);
+			}
+				
+			// Next we match player names
+			if (faction == null)
+			{
+				FPlayer fplayer = FPlayers.i.getBestIdMatch(name);
+				if (fplayer != null)
+				{
+					faction = fplayer.getFaction();
+				}
+			}
+			
 			if (faction != null)
 			{
 				ret = faction;
 			}
-
-			// Next we search player names
-			FPlayer fplayer = FPlayers.i.find(name);
-			if (fplayer != null)
-			{
-				ret = fplayer.getFaction();
-			}
-			
 		}
 		
 		if (msg && ret == null)
 		{
-			this.sendMessage(p.txt.parse("<b>The faction or player \"<p>%s<b>\" could not be found.", name));
+			this.msg("<b>The faction or player \"<p>%s<b>\" could not be found.", name);
 		}
 		
 		return ret;
+	}
+	public Faction argAsFaction(int idx, Faction def, boolean msg)
+	{
+		return this.strAsFaction(this.argAsString(idx), def, msg);
 	}
 	public Faction argAsFaction(int idx, Faction def)
 	{
@@ -250,6 +275,108 @@ public abstract class FCommand extends MCommand<P>
 		return this.argAsFaction(idx, null);
 	}
 	
+	// FACTION FLAG ======================
+	public FFlag strAsFactionFlag(String name, FFlag def, boolean msg)
+	{
+		FFlag ret = def;
+		
+		if (name != null)
+		{
+			FFlag flag = FFlag.parse(name);
+			if (flag != null)
+			{
+				ret = flag;
+			}
+		}
+		
+		if (msg && ret == null)
+		{
+			this.msg("<b>The faction-flag \"<p>%s<b>\" could not be found.", name);
+		}
+		
+		return ret;
+	}
+	public FFlag argAsFactionFlag(int idx, FFlag def, boolean msg)
+	{
+		return this.strAsFactionFlag(this.argAsString(idx), def, msg);
+	}
+	public FFlag argAsFactionFlag(int idx, FFlag def)
+	{
+		return this.argAsFactionFlag(idx, def, true);
+	}
+	public FFlag argAsFactionFlag(int idx)
+	{
+		return this.argAsFactionFlag(idx, null);
+	}
+	
+	// FACTION PERM ======================
+	public FPerm strAsFactionPerm(String name, FPerm def, boolean msg)
+	{
+		FPerm ret = def;
+		
+		if (name != null)
+		{
+			FPerm perm = FPerm.parse(name);
+			if (perm != null)
+			{
+				ret = perm;
+			}
+		}
+		
+		if (msg && ret == null)
+		{
+			this.msg("<b>The faction-perm \"<p>%s<b>\" could not be found.", name);
+		}
+		
+		return ret;
+	}
+	public FPerm argAsFactionPerm(int idx, FPerm def, boolean msg)
+	{
+		return this.strAsFactionPerm(this.argAsString(idx), def, msg);
+	}
+	public FPerm argAsFactionPerm(int idx, FPerm def)
+	{
+		return this.argAsFactionPerm(idx, def, true);
+	}
+	public FPerm argAsFactionPerm(int idx)
+	{
+		return this.argAsFactionPerm(idx, null);
+	}
+	
+	// FACTION REL ======================
+	public Rel strAsRel(String name, Rel def, boolean msg)
+	{
+		Rel ret = def;
+		
+		if (name != null)
+		{
+			Rel perm = Rel.parse(name);
+			if (perm != null)
+			{
+				ret = perm;
+			}
+		}
+		
+		if (msg && ret == null)
+		{
+			this.msg("<b>The role \"<p>%s<b>\" could not be found.", name);
+		}
+		
+		return ret;
+	}
+	public Rel argAsRel(int idx, Rel def, boolean msg)
+	{
+		return this.strAsRel(this.argAsString(idx), def, msg);
+	}
+	public Rel argAsRel(int idx, Rel def)
+	{
+		return this.argAsRel(idx, def, true);
+	}
+	public Rel argAsRel(int idx)
+	{
+		return this.argAsRel(idx, null);
+	}
+	
 	// -------------------------------------------- //
 	// Commonly used logic
 	// -------------------------------------------- //
@@ -258,20 +385,20 @@ public abstract class FCommand extends MCommand<P>
 	{
 		if ( ! i.getFaction().equals(you.getFaction()))
 		{
-			i.sendMessage(p.txt.parse("%s <b>is not in the same faction as you.",you.getNameAndRelevant(i)));
+			i.sendMessage(p.txt.parse("%s <b>is not in the same faction as you.",you.describeTo(i, true)));
 			return false;
 		}
 		
-		if (i.getRole().value > you.getRole().value || i.getRole().equals(Role.ADMIN) )
+		if (i.getRole().isMoreThan(you.getRole()) || i.getRole().equals(Rel.LEADER) )
 		{
 			return true;
 		}
 		
-		if (you.getRole().equals(Role.ADMIN))
+		if (you.getRole().equals(Rel.LEADER))
 		{
 			i.sendMessage(p.txt.parse("<b>Only the faction admin can do that."));
 		}
-		else if (i.getRole().equals(Role.MODERATOR))
+		else if (i.getRole().equals(Rel.OFFICER))
 		{
 			if ( i == you )
 			{
@@ -293,66 +420,22 @@ public abstract class FCommand extends MCommand<P>
 	// if economy is enabled and they're not on the bypass list, make 'em pay; returns true unless person can't afford the cost
 	public boolean payForCommand(double cost, String toDoThis, String forDoingThis)
 	{
-		if ( ! Econ.shouldBeUsed() || this.fme == null || cost == 0.0 || fme.isAdminBypassing()) return true;
+		if ( ! Econ.shouldBeUsed() || this.fme == null || cost == 0.0 || fme.hasAdminMode()) return true;
 
-		if(Conf.bankFactionPaysLandCosts && fme.hasFaction())
-		{
-			if ( ! Econ.modifyMoney(myFaction, -cost, toDoThis, forDoingThis)) return false;
-		}
+		if(Conf.bankEnabled && Conf.bankFactionPaysCosts && fme.hasFaction())
+			return Econ.modifyMoney(myFaction, -cost, toDoThis, forDoingThis);
 		else
-		{
-			if ( ! Econ.modifyMoney(fme, -cost, toDoThis, forDoingThis)) return false;
-		}
-		return true;
-		/*
-		
-		
-		
-		// pay up
-		if (cost > 0.0)
-		{
-			String costString = Econ.moneyString(cost);
-			if(Conf.bankFactionPaysCosts && fme.hasFaction() )
-			{
-				if( ! faction.getAccount().subtract(cost))
-				{
-					sendMessage("It costs "+costString+" to "+desc+", which your faction can't currently afford.");
-					return false;
-				}
-				else
-				{
-					sendMessage(faction.getTag()+" has paid "+costString+" to "+desc+".");
-				}
-					
-			}
-			else
-			{
-				if ( ! Econ.deductMoney(fme.getName(), cost))
-				{
-					sendMessage("It costs "+costString+" to "+desc+", which you can't currently afford.");
-					return false;
-				}
-				sendMessage("You have paid "+costString+" to "+desc+".");
-			}
-		}
-		// wait... we pay you to use this command?
+			return Econ.modifyMoney(fme, -cost, toDoThis, forDoingThis);
+	}
+
+	// like above, but just make sure they can pay; returns true unless person can't afford the cost
+	public boolean canAffordCommand(double cost, String toDoThis)
+	{
+		if ( ! Econ.shouldBeUsed() || this.fme == null || cost == 0.0 || fme.hasAdminMode()) return true;
+
+		if(Conf.bankEnabled && Conf.bankFactionPaysCosts && fme.hasFaction())
+			return Econ.hasAtLeast(myFaction, -cost, toDoThis);
 		else
-		{
-			String costString = Econ.moneyString(-cost);
-			
-			if(Conf.bankFactionPaysCosts && fme.hasFaction() )
-			{
-				faction.getAccount().add(-cost);
-				sendMessage(faction.getTag()+" has been paid "+costString+" to "+desc+".");
-			}
-			else
-			{
-				Econ.addMoney(fme.getName(), -cost);
-			}
-			
-			
-			sendMessage("You have been paid "+costString+" to "+desc+".");
-		}
-		return true;*/
+			return Econ.hasAtLeast(fme, -cost, toDoThis);
 	}
 }

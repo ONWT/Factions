@@ -4,8 +4,8 @@ import com.massivecraft.factions.Board;
 import com.massivecraft.factions.Conf;
 import com.massivecraft.factions.FLocation;
 import com.massivecraft.factions.Faction;
+import com.massivecraft.factions.struct.FPerm;
 import com.massivecraft.factions.struct.Permission;
-import com.massivecraft.factions.struct.Role;
 
 public class CmdSethome extends FCommand
 {
@@ -14,15 +14,15 @@ public class CmdSethome extends FCommand
 		this.aliases.add("sethome");
 		
 		//this.requiredArgs.add("");
-		this.optionalArgs.put("faction tag", "mine");
+		this.optionalArgs.put("faction", "your");
 		
 		this.permission = Permission.SETHOME.node;
 		this.disableOnLock = true;
 		
 		senderMustBePlayer = true;
 		senderMustBeMember = false;
-		senderMustBeModerator = false;
-		senderMustBeAdmin = false;
+		senderMustBeOfficer = false;
+		senderMustBeLeader = false;
 	}
 	
 	@Override
@@ -38,19 +38,12 @@ public class CmdSethome extends FCommand
 		if (faction == null) return;
 		
 		// Can the player set the home for this faction?
-		if (faction == myFaction)
-		{
-			if ( ! Permission.SETHOME_ANY.has(sender) && ! assertMinRole(Role.MODERATOR)) return;
-		}
-		else
-		{
-			if (Permission.SETHOME_ANY.has(sender, true)) return;
-		}
+		if ( ! FPerm.SETHOME.has(sender, faction, true)) return;
 		
 		// Can the player set the faction home HERE?
 		if
 		(
-			! Permission.BYPASS.has(me)
+			! fme.hasAdminMode()
 			&&
 			Conf.homesMustBeInClaimedTerritory
 			&& 
@@ -66,7 +59,7 @@ public class CmdSethome extends FCommand
 
 		faction.setHome(me.getLocation());
 		
-		faction.msg("%s<i> set the home for your faction. You can now use:", fme.getNameAndRelevant(myFaction));
+		faction.msg("%s<i> set the home for your faction. You can now use:", fme.describeTo(myFaction, true));
 		faction.sendMessage(p.cmdBase.cmdHome.getUseageTemplate());
 		if (faction != myFaction)
 		{

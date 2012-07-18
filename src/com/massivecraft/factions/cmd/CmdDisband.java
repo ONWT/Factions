@@ -1,14 +1,19 @@
 package com.massivecraft.factions.cmd;
 
+import org.bukkit.Bukkit;
+
+import com.massivecraft.factions.Conf;
+import com.massivecraft.factions.event.FPlayerLeaveEvent;
+import com.massivecraft.factions.event.FactionDisbandEvent;
 import com.massivecraft.factions.integration.Econ;
 import com.massivecraft.factions.FPlayers;
 import com.massivecraft.factions.Faction;
 import com.massivecraft.factions.P;
 import com.massivecraft.factions.FPlayer;
 import com.massivecraft.factions.integration.SpoutFeatures;
+import com.massivecraft.factions.struct.FFlag;
+import com.massivecraft.factions.struct.FPerm;
 import com.massivecraft.factions.struct.Permission;
-import com.massivecraft.factions.struct.Role;
-
 
 public class CmdDisband extends FCommand
 {
@@ -18,15 +23,15 @@ public class CmdDisband extends FCommand
 		this.aliases.add("disband");
 		
 		//this.requiredArgs.add("");
-		this.optionalArgs.put("faction tag", "yours");
+		this.optionalArgs.put("faction", "your");
 		
 		this.permission = Permission.DISBAND.node;
 		this.disableOnLock = true;
 		
 		senderMustBePlayer = false;
 		senderMustBeMember = false;
-		senderMustBeModerator = false;
-		senderMustBeAdmin = false;
+		senderMustBeOfficer = false;
+		senderMustBeLeader = false;
 	}
 	
 	@Override
@@ -36,30 +41,28 @@ public class CmdDisband extends FCommand
 		Faction faction = this.argAsFaction(0, fme == null ? null : myFaction);
 		if (faction == null) return;
 		
-		boolean isMyFaction = fme == null ? false : faction == myFaction;
-		
-		if (isMyFaction)
-		{
-			if ( ! assertMinRole(Role.ADMIN)) return;
-		}
-		else
-		{
-			if ( ! Permission.DISBAND_ANY.has(sender, true))
-			{
-				return;
-			}
-		}
+		if ( ! FPerm.DISBAND.has(sender, faction, true)) return;
 
-		if (faction.isPermanent())
+		if (faction.getFlag(FFlag.PERMANENT))
 		{
 			msg("<i>This faction is designated as permanent, so you cannot disband it.");
 			return;
 		}
 
+		FactionDisbandEvent disbandEvent = new FactionDisbandEvent(me, faction.getId());
+		Bukkit.getServer().getPluginManager().callEvent(disbandEvent);
+		if(disbandEvent.isCancelled()) return;
+
+		// Send FPlayerLeaveEvent for each player in the faction
+		for ( FPlayer fplayer : faction.getFPlayers() )
+		{
+			Bukkit.getServer().getPluginManager().callEvent(new FPlayerLeaveEvent(fplayer, faction, FPlayerLeaveEvent.PlayerLeaveReason.DISBAND));
+		}
+
 		// Inform all players
 		for (FPlayer fplayer : FPlayers.i.getOnline())
 		{
-			String who = senderIsConsole ? "A server admin" : fme.getNameAndRelevant(fplayer);
+			String who = senderIsConsole ? "A server admin" : fme.describeTo(fplayer);
 			if (fplayer.getFaction() == faction)
 			{
 				fplayer.msg("<h>%s<i> disbanded your faction.", who);
@@ -69,14 +72,14 @@ public class CmdDisband extends FCommand
 				fplayer.msg("<h>%s<i> disbanded the faction %s.", who, faction.getTag(fplayer));
 			}
 		}
-		P.p.log("The faction "+faction.getTag()+" ("+faction.getId()+") was disbanded by "+(senderIsConsole ? "console command" : fme.getName())+".");
+		if (Conf.logFactionDisband)
+			P.p.log("The faction "+faction.getTag()+" ("+faction.getId()+") was disbanded by "+(senderIsConsole ? "console command" : fme.getName())+".");
 
-		if (Econ.shouldBeUsed())
+		if (Econ.shouldBeUsed() && ! senderIsConsole)
 		{
 			//Give all the faction's money to the disbander
-			double amount = faction.getAccount().balance();
-			fme.getAccount().add(amount);
-			faction.getAccount().remove();
+			double amount = Econ.getBalance(faction.getAccountId());
+			Econ.transferMoney(fme, faction, fme, amount, false);
 			
 			if (amount > 0.0)
 			{
@@ -87,7 +90,8 @@ public class CmdDisband extends FCommand
 		}		
 		
 		faction.detach();
-		
-		SpoutFeatures.updateAppearances();
+
+		SpoutFeatures.updateTitle(null, null);
+		SpoutFeatures.updateCape(null, null);
 	}
 }

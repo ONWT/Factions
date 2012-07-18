@@ -1,57 +1,59 @@
 package com.massivecraft.factions.struct;
 
 import org.bukkit.command.CommandSender;
-
 import com.massivecraft.factions.P;
 
 public enum Permission
 {
-	MANAGE_SAFE_ZONE("managesafezone"),
-	MANAGE_WAR_ZONE("managewarzone"),
-	OWNERSHIP_BYPASS("ownershipbypass"),
-	ADMIN("admin"),
+	ACCESS("access"),
+	ACCESS_ANY("access.any"),
+	ACCESS_VIEW("access.view"),
+	ADMIN("adminmode"),
 	AUTOCLAIM("autoclaim"),
-	BYPASS("bypass"),
-	CHAT("chat"),
+	CAPE("cape"),
+	CAPE_GET("cape.get"),
+	CAPE_SET("cape.set"),
+	CAPE_REMOVE("cape.remove"),
 	CLAIM("claim"),
 	CONFIG("config"),
 	CREATE("create"),
 	DEINVITE("deinvite"),
 	DESCRIPTION("description"),
 	DISBAND("disband"),
-	DISBAND_ANY("disband.any"),
+	FLAG("flag"),
+	FLAG_SET("flag.set"),
 	HELP("help"),
 	HOME("home"),
 	INVITE("invite"),
 	JOIN("join"),
+	JOIN_ANY("join.any"),
+	JOIN_OTHERS("join.others"),
 	KICK("kick"),
-	KICK_ANY("kick.any"),
+	LEADER("leader"),
+	LEADER_ANY("leader.any"),
 	LEAVE("leave"),
 	LIST("list"),
 	LOCK("lock"),
 	MAP("map"),
-	MOD("mod"),
 	MONEY_BALANCE("money.balance"),
 	MONEY_BALANCE_ANY("money.balance.any"),
 	MONEY_DEPOSIT("money.deposit"),
-	MONEY_WITHDRAW("money.withdraw"),
-	MONEY_WITHDRAW_ANY("money.withdraw.any"),
 	MONEY_F2F("money.f2f"),
 	MONEY_F2P("money.f2p"),
 	MONEY_P2F("money.p2f"),
-	NO_BOOM("noboom"),
+	MONEY_WITHDRAW("money.withdraw"),
+	OFFICER("officer"),
+	OFFICER_ANY("officer.any"),
 	OPEN("open"),
-	OWNER("owner"),
-	OWNERLIST("ownerlist"),
-	SET_PEACEFUL("setpeaceful"),
-	SET_PERMANENT("setpermanent"),
+	PERM("perm"),
 	POWER("power"),
 	POWER_ANY("power.any"),
+	POWERBOOST("powerboost"),
 	RELATION("relation"),
 	RELOAD("reload"),
 	SAVE("save"),
+	SEE_CHUNK("seechunk"),
 	SETHOME("sethome"),
-	SETHOME_ANY("sethome.any"),
 	SHOW("show"),
 	TAG("tag"),
 	TITLE("title"),
@@ -65,7 +67,7 @@ public enum Permission
 	Permission(final String node)
 	{
 		this.node = "factions."+node;
-    }
+	}
 	
 	public boolean has(CommandSender sender, boolean informSenderIfNot)
 	{

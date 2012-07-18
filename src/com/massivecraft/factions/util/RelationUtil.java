@@ -2,10 +2,12 @@ package com.massivecraft.factions.util;
 
 import org.bukkit.ChatColor;
 
+import com.massivecraft.factions.Conf;
 import com.massivecraft.factions.FPlayer;
 import com.massivecraft.factions.Faction;
 import com.massivecraft.factions.iface.RelationParticipator;
-import com.massivecraft.factions.struct.Relation;
+import com.massivecraft.factions.struct.FFlag;
+import com.massivecraft.factions.struct.Rel;
 import com.massivecraft.factions.zcore.util.TextUtil;
 
 public class RelationUtil
@@ -14,11 +16,16 @@ public class RelationUtil
 	{
 		String ret = "";
 
+		if (that == null)
+		{
+			return "A server admin";
+		}
+		
 		Faction thatFaction = getFaction(that);
 		if (thatFaction == null) return "ERROR"; // ERROR
 
 		Faction myFaction = getFaction(me);
-		if (myFaction == null) return "ERROR"; // ERROR
+//		if (myFaction == null) return thatFaction.getTag(); // no relation, but can show basic name or tag
 
 		if (that instanceof Faction)
 		{
@@ -28,7 +35,7 @@ public class RelationUtil
 			}
 			else
 			{
-				ret = "the faction " + thatFaction.getTag();
+				ret = thatFaction.getTag();
 			}
 		}
 		else if (that instanceof FPlayer)
@@ -53,7 +60,7 @@ public class RelationUtil
 			ret = TextUtil.upperCaseFirst(ret);
 		}
 
-		return "" + getRelationColor(me, that) + ret;
+		return "" + getColorOfThatToMe(that, me) + ret;
 	}
 
 	public static String describeThatToMe(RelationParticipator that, RelationParticipator me)
@@ -61,40 +68,48 @@ public class RelationUtil
 		return describeThatToMe(that, me, false);
 	}
 
-	public static Relation getRelationTo(RelationParticipator me, RelationParticipator that)
+	public static Rel getRelationOfThatToMe(RelationParticipator that, RelationParticipator me)
 	{
-		return getRelationTo(that, me, false);
+		return getRelationOfThatToMe(that, me, false);
 	}
 
-	public static Relation getRelationTo(RelationParticipator me, RelationParticipator that, boolean ignorePeaceful)
+	public static Rel getRelationOfThatToMe(RelationParticipator that, RelationParticipator me, boolean ignorePeaceful)
 	{
-		Faction fthat = getFaction(that);
-		if (fthat == null) return Relation.NEUTRAL; // ERROR
+		Rel ret = null;
+		
+		Faction myFaction = getFaction(me);
+		if (myFaction == null) return Rel.NEUTRAL; // ERROR
 
-		Faction fme = getFaction(me);
-		if (fme == null) return Relation.NEUTRAL; // ERROR
-
-		if (!fthat.isNormal() || !fme.isNormal())
+		Faction thatFaction = getFaction(that);
+		if (thatFaction == null) return Rel.NEUTRAL; // ERROR
+		
+		// The faction with the lowest wish "wins"
+		if (thatFaction.getRelationWish(myFaction).isLessThan(myFaction.getRelationWish(thatFaction)))
 		{
-			return Relation.NEUTRAL;
+			ret = thatFaction.getRelationWish(myFaction);
+		}
+		else
+		{
+			ret = myFaction.getRelationWish(thatFaction);
 		}
 
-		if (fthat.equals(fme))
+		if (myFaction.equals(thatFaction))
 		{
-			return Relation.MEMBER;
+			ret = Rel.MEMBER;
+			// Do officer and leader check
+			//P.p.log("getRelationOfThatToMe the factions are the same for "+that.getClass().getSimpleName()+" and observer "+me.getClass().getSimpleName());
+			if (that instanceof FPlayer)
+			{
+				ret = ((FPlayer)that).getRole();
+				//P.p.log("getRelationOfThatToMe it was a player and role is "+ret);
+			}
+		}
+		else if (!ignorePeaceful && (thatFaction.getFlag(FFlag.PEACEFUL) || myFaction.getFlag(FFlag.PEACEFUL)))
+		{
+			ret = Rel.TRUCE;
 		}
 
-		if (!ignorePeaceful && (fme.isPeaceful() || fthat.isPeaceful()))
-		{
-			return Relation.NEUTRAL;
-		}
-
-		if (fme.getRelationWish(fthat).value >= fthat.getRelationWish(fme).value)
-		{
-			return fthat.getRelationWish(fme);
-		}
-
-		return fme.getRelationWish(fthat);
+		return ret;
 	}
 
 	public static Faction getFaction(RelationParticipator rp)
@@ -113,9 +128,21 @@ public class RelationUtil
 		return null;
 	}
 
-	public static ChatColor getRelationColor(RelationParticipator me,
-			RelationParticipator that)
+	public static ChatColor getColorOfThatToMe(RelationParticipator that, RelationParticipator me)
 	{
-		return getRelationTo(that, me).getColor();
+		Faction thatFaction = getFaction(that);
+		if (thatFaction != null && thatFaction != getFaction(me))
+		{
+			if (thatFaction.getFlag(FFlag.FRIENDLYFIRE) == true)
+			{
+				return Conf.colorFriendlyFire;
+			}
+			
+			if (thatFaction.getFlag(FFlag.PVP) == false)
+			{
+				return Conf.colorNoPVP;
+			}
+		}
+		return getRelationOfThatToMe(that, me).getColor();
 	}
 }
