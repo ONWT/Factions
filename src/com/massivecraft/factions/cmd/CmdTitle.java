@@ -12,7 +12,7 @@ public class CmdTitle extends FCommand
 	{
 		this.aliases.add("title");
 		
-		this.requiredArgs.add("player name");
+		this.requiredArgs.add("player");
 		this.optionalArgs.put("title", "");
 		
 		this.permission = Permission.TITLE.node;
@@ -20,8 +20,8 @@ public class CmdTitle extends FCommand
 		
 		senderMustBePlayer = true;
 		senderMustBeMember = false;
-		senderMustBeModerator = true;
-		senderMustBeAdmin = false;
+		senderMustBeOfficer = true;
+		senderMustBeLeader = false;
 	}
 	
 	@Override
@@ -41,11 +41,11 @@ public class CmdTitle extends FCommand
 		you.setTitle(title);
 		
 		// Inform
-		myFaction.msg("%s<i> changed a title: %s", fme.getNameAndRelevant(myFaction), you.getNameAndRelevant(myFaction));
+		myFaction.msg("%s<i> changed a title: %s", fme.describeTo(myFaction, true), you.describeTo(myFaction, true));
 
 		if (Conf.spoutFactionTitlesOverNames)
 		{
-			SpoutFeatures.updateAppearances(me);
+			SpoutFeatures.updateTitle(me, null);
 		}
 	}
 	

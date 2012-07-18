@@ -7,6 +7,7 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import com.google.gson.reflect.TypeToken;
+import com.massivecraft.factions.struct.Rel;
 import com.massivecraft.factions.zcore.persist.PlayerEntityCollection;
 
 public class FPlayers extends PlayerEntityCollection<FPlayer>
@@ -42,7 +43,7 @@ public class FPlayers extends PlayerEntityCollection<FPlayer>
 			if ( ! Factions.i.exists(fplayer.getFactionId()))
 			{
 				p.log("Reset faction data (invalid faction) for player "+fplayer.getName());
-				fplayer.resetFactionData();
+				fplayer.resetFactionData(false);
 			}
 		}
 	}
@@ -59,52 +60,22 @@ public class FPlayers extends PlayerEntityCollection<FPlayer>
 		
 		for (FPlayer fplayer : FPlayers.i.get())
 		{
-			if (now - fplayer.getLastLoginTime() > toleranceMillis)
+			if (fplayer.isOffline() && now - fplayer.getLastLoginTime() > toleranceMillis)
 			{
+				if (Conf.logFactionLeave || Conf.logFactionKick)
+					P.p.log("Player "+fplayer.getName()+" was auto-removed due to inactivity.");
+
+				// if player is faction leader, sort out the faction since he's going away
+				if (fplayer.getRole() == Rel.LEADER)
+				{
+					Faction faction = fplayer.getFaction();
+					if (faction != null)
+						fplayer.getFaction().promoteNewLeader();
+				}
+
 				fplayer.leave(false);
-				fplayer.markForDeletion(true);
+				fplayer.detach();
 			}
 		}
 	}
-	
-	
-	// TODO: Intressant.... denna skulle jag kanske behöva undersöka lite mer... lägga till i core?
-	// En form av match player name...
-	public FPlayer find(String playername)
-	{
-		for (FPlayer fplayer : this.get())
-		{
-			if (fplayer.getId().equalsIgnoreCase(playername) || fplayer.getId().toLowerCase().startsWith(playername.toLowerCase()))
-			{
-				return fplayer;
-			}
-		}
-		return null;
-	}
-	
-	/*public Set<VPlayer> findAllOnlineInfected()
-	{
-		Set<VPlayer> vplayers = new HashSet<VPlayer>();
-		for (VPlayer vplayer : this.getOnline())
-		{
-			if (vplayer.isInfected())
-			{
-				vplayers.add(vplayer);
-			}
-		}
-		return vplayers;
-	}
-	
-	public Set<VPlayer> findAllOnlineVampires()
-	{
-		Set<VPlayer> vplayers = new HashSet<VPlayer>();
-		for (VPlayer vplayer : this.getOnline())
-		{
-			if (vplayer.isVampire())
-			{
-				vplayers.add(vplayer);
-			}
-		}
-		return vplayers;
-	}*/
 }

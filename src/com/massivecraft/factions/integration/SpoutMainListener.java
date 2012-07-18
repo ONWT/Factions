@@ -3,6 +3,11 @@ package com.massivecraft.factions.integration;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+
 import com.massivecraft.factions.Board;
 import com.massivecraft.factions.Conf;
 import com.massivecraft.factions.FLocation;
@@ -10,26 +15,26 @@ import com.massivecraft.factions.FPlayer;
 import com.massivecraft.factions.FPlayers;
 import com.massivecraft.factions.Faction;
 import com.massivecraft.factions.P;
+import com.massivecraft.factions.struct.TerritoryAccess;
 
 import org.getspout.spoutapi.event.spout.SpoutCraftEnableEvent;
-import org.getspout.spoutapi.event.spout.SpoutListener;
+import org.getspout.spoutapi.gui.Color;
 import org.getspout.spoutapi.gui.GenericLabel;
 import org.getspout.spoutapi.player.SpoutPlayer;
 import org.getspout.spoutapi.SpoutManager;
-//import org.getspout.spoutapi.gui.WidgetAnchor;
 
 
-public class SpoutMainListener extends SpoutListener
+public class SpoutMainListener implements Listener
 {
-	@Override
+	@EventHandler(priority = EventPriority.NORMAL)
 	public void onSpoutCraftEnable(SpoutCraftEnableEvent event)
 	{
 		final FPlayer me = FPlayers.i.get(event.getPlayer());
 
-		SpoutFeatures.updateAppearances(me.getPlayer());
-		updateTerritoryDisplay(me);
+		SpoutFeatures.updateTitle(me, null);
+		SpoutFeatures.updateTitle(null, me);
+		updateTerritoryDisplay(me, true);
 	}
-
 
 	//-----------------------------------------------------------------------------------------//
 	// Everything below this is handled in here to prevent errors on servers not running Spout
@@ -37,49 +42,56 @@ public class SpoutMainListener extends SpoutListener
 
 	private transient static Map<String, GenericLabel> territoryLabels = new HashMap<String, GenericLabel>();
 	private transient static Map<String, NoticeLabel> territoryChangeLabels = new HashMap<String, NoticeLabel>();
-	private transient static Map<String, GenericLabel> ownerLabels = new HashMap<String, GenericLabel>();
+	private transient static Map<String, GenericLabel> accessLabels = new HashMap<String, GenericLabel>();
 	private final static int SCREEN_WIDTH = 427;
 //	private final static int SCREEN_HEIGHT = 240;
 
 
-	public boolean updateTerritoryDisplay(FPlayer player)
+	public boolean updateTerritoryDisplay(FPlayer player, boolean notify)
 	{
-		SpoutPlayer sPlayer = SpoutManager.getPlayer(player.getPlayer());
+		Player p = player.getPlayer();
+		if (p == null)
+			return false;
+
+		SpoutPlayer sPlayer = SpoutManager.getPlayer(p);
 		if (!sPlayer.isSpoutCraftEnabled() || (Conf.spoutTerritoryDisplaySize <= 0 && ! Conf.spoutTerritoryNoticeShow))
 			return false;
 
-		doLabels(player, sPlayer);
+		doLabels(player, sPlayer, notify);
 
 		return true;
 	}
 
-	public void updateOwnerList(FPlayer player)
+	public boolean updateAccessInfo(FPlayer player)
 	{
-		SpoutPlayer sPlayer = SpoutManager.getPlayer(player.getPlayer());
+		Player p = player.getPlayer();
+		if (p == null)
+			return false;
+
+		SpoutPlayer sPlayer = SpoutManager.getPlayer(p);
 		if (!sPlayer.isSpoutCraftEnabled() || (Conf.spoutTerritoryDisplaySize <= 0 && ! Conf.spoutTerritoryNoticeShow))
-			return;
+			return false;
 
 		FLocation here = new FLocation(player);
-		Faction factionHere = Board.getFactionAt(here);
 
-		doOwnerList(player, sPlayer, here, factionHere);
+		doAccessInfo(player, sPlayer, here);
 
-		return;
+		return true;
 	}
 
 	public void removeTerritoryLabels(String playerName)
 	{
 		territoryLabels.remove(playerName);
 		territoryChangeLabels.remove(playerName);
-		ownerLabels.remove(playerName);
+		accessLabels.remove(playerName);
 	}
 
 
-	private void doLabels(FPlayer player, SpoutPlayer sPlayer)
+	private void doLabels(FPlayer player, SpoutPlayer sPlayer, boolean notify)
 	{
 		FLocation here = new FLocation(player);
 		Faction factionHere = Board.getFactionAt(here);
-		String tag = factionHere.getTag(player);
+		String tag = factionHere.getColorTo(player).toString() + factionHere.getTag();
 
 		// ----------------------
 		// Main territory display
@@ -92,14 +104,9 @@ public class SpoutMainListener extends SpoutListener
 			else
 			{
 				label = new GenericLabel();
+				label.setWidth(1).setHeight(1);  // prevent Spout's questionable new "no default size" warning
 				label.setScale(Conf.spoutTerritoryDisplaySize);
-/*				// this should work once the Spout team fix it to account for text scaling; we can then get rid of alignLabel method added below
-				switch (Conf.spoutTerritoryDisplayPosition) {
-					case 1: label.setAlign(WidgetAnchor.TOP_LEFT).setAnchor(WidgetAnchor.TOP_LEFT); break;
-					case 2: label.setAlign(WidgetAnchor.TOP_CENTER).setAnchor(WidgetAnchor.TOP_CENTER); break;
-					default: label.setAlign(WidgetAnchor.TOP_RIGHT).setAnchor(WidgetAnchor.TOP_RIGHT);
-				}
- */
+
 				sPlayer.getMainScreen().attachWidget(P.p, label);
 				territoryLabels.put(player.getName(), label);
 			}
@@ -117,7 +124,7 @@ public class SpoutMainListener extends SpoutListener
 		// -----------------------
 		// Fading territory notice
 		// -----------------------
-		if (Conf.spoutTerritoryNoticeShow && Conf.spoutTerritoryNoticeSize > 0)
+		if (notify && Conf.spoutTerritoryNoticeShow && Conf.spoutTerritoryNoticeSize > 0)
 		{
 			NoticeLabel label; 
 			if (territoryChangeLabels.containsKey(player.getName()))
@@ -125,6 +132,7 @@ public class SpoutMainListener extends SpoutListener
 			else
 			{
 				label = new NoticeLabel(Conf.spoutTerritoryNoticeLeaveAfterSeconds);
+				label.setWidth(1).setHeight(1);  // prevent Spout's questionable new "no default size" warning
 				label.setScale(Conf.spoutTerritoryNoticeSize);
 				label.setY(Conf.spoutTerritoryNoticeTop);
 				sPlayer.getMainScreen().attachWidget(P.p, label);
@@ -142,45 +150,53 @@ public class SpoutMainListener extends SpoutListener
 			label.setDirty(true);
 		}
 
-		// and owner list, of course
-		doOwnerList(player, sPlayer, here, factionHere);
+		// and access info, of course
+		doAccessInfo(player, sPlayer, here);
 	}
-	
-	private void doOwnerList(FPlayer player, SpoutPlayer sPlayer, FLocation here, Faction factionHere)
+
+	private static final Color accessGrantedColor = new Color(0.2f, 1.0f, 0.2f);
+	private static final Color accessDeniedColor = new Color(1.0f, 0.2f, 0.2f);
+	private void doAccessInfo(FPlayer player, SpoutPlayer sPlayer, FLocation here)
 	{
-		// ----------
-		// Owner list
-		// ----------
-		if (Conf.spoutTerritoryDisplayPosition > 0 && Conf.spoutTerritoryDisplaySize > 0 && Conf.spoutTerritoryOwnersShow && Conf.ownedAreasEnabled)
+		if (Conf.spoutTerritoryDisplayPosition <= 0 || Conf.spoutTerritoryDisplaySize <= 0 || ! Conf.spoutTerritoryAccessShow) return;
+
+		// -----------
+		// Access Info
+		// -----------
+		GenericLabel label; 
+		if (accessLabels.containsKey(player.getName()))
+			label = accessLabels.get(player.getName());
+		else
 		{
-			GenericLabel label; 
-			if (ownerLabels.containsKey(player.getName()))
-				label = ownerLabels.get(player.getName());
-			else
-			{
-				label = new GenericLabel();
-				label.setScale(Conf.spoutTerritoryDisplaySize);
-				label.setY((int)(10 * Conf.spoutTerritoryDisplaySize));
-				sPlayer.getMainScreen().attachWidget(P.p, label);
-				ownerLabels.put(player.getName(), label);
-			}
-
-			String msg = "";
-
-			if (player.getFaction() == factionHere)
-			{
-				msg = factionHere.getOwnerListString(here);
-
-				if (!msg.isEmpty())
-					msg = Conf.ownedLandMessage + msg;
-			}
-
-			label.setText(msg);
-			alignLabel(label, msg);
-			label.setDirty(true);
+			label = new GenericLabel();
+			label.setWidth(1).setHeight(1);  // prevent Spout's questionable new "no default size" warning
+			label.setScale(Conf.spoutTerritoryDisplaySize);
+			label.setY((int)(10 * Conf.spoutTerritoryDisplaySize));
+			sPlayer.getMainScreen().attachWidget(P.p, label);
+			accessLabels.put(player.getName(), label);
 		}
-	}
 
+		String msg = "";
+		TerritoryAccess access = Board.getTerritoryAccessAt(here);
+
+		if ( ! access.isDefault())
+		{
+			if (access.subjectHasAccess(player))
+			{
+				msg = "access granted";
+				label.setTextColor(accessGrantedColor);
+			}
+			else if (access.subjectAccessIsRestricted(player))
+			{
+				msg = "access restricted";
+				label.setTextColor(accessDeniedColor);
+			}
+		}
+
+		label.setText(msg);
+		alignLabel(label, msg);
+		label.setDirty(true);
+	}
 
 	// this is only necessary because Spout text size scaling is currently bugged and breaks their built-in alignment methods
 	public void alignLabel(GenericLabel label, String text)

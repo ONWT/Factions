@@ -1,33 +1,36 @@
 package com.massivecraft.factions.cmd;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 
 import com.massivecraft.factions.Conf;
 import com.massivecraft.factions.integration.Econ;
 import com.massivecraft.factions.FPlayer;
 import com.massivecraft.factions.Faction;
-import com.massivecraft.factions.Factions;
+import com.massivecraft.factions.struct.FFlag;
 import com.massivecraft.factions.struct.Permission;
-import com.massivecraft.factions.struct.Role;
+import com.massivecraft.factions.struct.Rel;
+import com.massivecraft.factions.zcore.util.TextUtil;
 
 public class CmdShow extends FCommand
 {
-	
 	public CmdShow()
 	{
 		this.aliases.add("show");
 		this.aliases.add("who");
 		
 		//this.requiredArgs.add("");
-		this.optionalArgs.put("faction tag", "yours");
+		this.optionalArgs.put("faction", "your");
 		
 		this.permission = Permission.SHOW.node;
 		this.disableOnLock = false;
 		
 		senderMustBePlayer = true;
 		senderMustBeMember = false;
-		senderMustBeModerator = false;
-		senderMustBeAdmin = false;
+		senderMustBeOfficer = false;
+		senderMustBeLeader = false;
 	}
 
 	@Override
@@ -43,30 +46,30 @@ public class CmdShow extends FCommand
 		// if economy is enabled, they're not on the bypass list, and this command has a cost set, make 'em pay
 		if ( ! payForCommand(Conf.econCostShow, "to show faction information", "for showing faction information")) return;
 
-		Collection<FPlayer> admins = faction.getFPlayersWhereRole(Role.ADMIN);
-		Collection<FPlayer> mods = faction.getFPlayersWhereRole(Role.MODERATOR);
-		Collection<FPlayer> normals = faction.getFPlayersWhereRole(Role.NORMAL);
+		Collection<FPlayer> admins = faction.getFPlayersWhereRole(Rel.LEADER);
+		Collection<FPlayer> mods = faction.getFPlayersWhereRole(Rel.OFFICER);
+		Collection<FPlayer> normals = faction.getFPlayersWhereRole(Rel.MEMBER);
 		
 		msg(p.txt.titleize(faction.getTag(fme)));
 		msg("<a>Description: <i>%s", faction.getDescription());
-		if ( ! faction.isNormal())
+		
+		// Display important flags
+		// TODO: Find the non default flags, and display them instead.
+		if (faction.getFlag(FFlag.PERMANENT))
 		{
-			return;
+			msg("<a>This faction is permanent - remaining even with no members.");
 		}
 		
-		String peaceStatus = "";
-		if (faction.isPeaceful())
+		if (faction.getFlag(FFlag.PEACEFUL))
 		{
-			peaceStatus = "     "+Conf.colorNeutral+"This faction is Peaceful";
+			msg("<a>This faction is peaceful - in truce with everyone.");
 		}
 		
-		msg("<a>Joining: <i>"+(faction.getOpen() ? "no invitation is needed" : "invitation is required")+peaceStatus);
-		msg("<a>Land / Power / Maxpower: <i> %d/%d/%d", faction.getLandRounded(), faction.getPowerRounded(), faction.getPowerMaxRounded());
+		msg("<a>Joining: <i>"+(faction.getOpen() ? "no invitation is needed" : "invitation is required"));
 
-		if (faction.isPermanent())
-		{
-			msg("<a>This faction is permanent, remaining even with no members.");
-		}
+		double powerBoost = faction.getPowerBoost();
+		String boost = (powerBoost == 0.0) ? "" : (powerBoost > 0.0 ? " (bonus: " : " (penalty: ") + powerBoost + ")";
+		msg("<a>Land / Power / Maxpower: <i> %d/%d/%d %s", faction.getLandRounded(), faction.getPowerRounded(), faction.getPowerMaxRounded(), boost);
 
 		// show the land value
 		if (Econ.shouldBeUsed())
@@ -81,88 +84,71 @@ public class CmdShow extends FCommand
 			}
 			
 			//Show bank contents
-			if(Conf.bankEnabled) {
-				msg("<a>Bank contains: <i>"+Econ.moneyString(faction.getAccount().balance()));
+			if(Conf.bankEnabled)
+			{
+				msg("<a>Bank contains: <i>"+Econ.moneyString(Econ.getBalance(faction.getAccountId())));
 			}
 		}
 
-		String listpart;
+		String sepparator = p.txt.parse("<i>")+", ";
 		
-		// List relation
-		String allyList = p.txt.parse("<a>Allies: ");
-		String enemyList = p.txt.parse("<a>Enemies: ");
-		for (Faction otherFaction : Factions.i.get())
+		// List the relations to other factions
+		Map<Rel, List<String>> relationTags = faction.getFactionTagsPerRelation(fme);
+		
+		if (faction.getFlag(FFlag.PEACEFUL))
 		{
-			if (otherFaction == faction)
-			{
-				continue;
-			}
-			listpart = otherFaction.getTag(fme)+p.txt.parse("<i>")+", ";
-			if (otherFaction.getRelationTo(faction).isAlly())
-			{
-				allyList += listpart;
-			}
-			else if (otherFaction.getRelationTo(faction).isEnemy())
-			{
-				enemyList += listpart;
-			}
+			sendMessage(p.txt.parse("<a>In Truce with:<i> *everyone*"));
 		}
-		if (allyList.endsWith(", "))
+		else
 		{
-			allyList = allyList.substring(0, allyList.length()-2);
-		}
-		if (enemyList.endsWith(", "))
-		{
-			enemyList = enemyList.substring(0, enemyList.length()-2);
+			sendMessage(p.txt.parse("<a>In Truce with: ") + TextUtil.implode(relationTags.get(Rel.TRUCE), sepparator));
 		}
 		
-		sendMessage(allyList);
-		sendMessage(enemyList);
+		sendMessage(p.txt.parse("<a>Allied to: ") + TextUtil.implode(relationTags.get(Rel.ALLY), sepparator));
+		sendMessage(p.txt.parse("<a>Enemies: ") + TextUtil.implode(relationTags.get(Rel.ENEMY), sepparator));
 		
 		// List the members...
-		String onlineList = p.txt.parse("<a>")+"Members online: ";
-		String offlineList = p.txt.parse("<a>")+"Members offline: ";
+		List<String> memberOnlineNames = new ArrayList<String>();
+		List<String> memberOfflineNames = new ArrayList<String>();
+		
 		for (FPlayer follower : admins)
 		{
-			listpart = follower.getNameAndTitle(fme)+p.txt.parse("<i>")+", ";
-			if (follower.isOnline())
+			if (follower.isOnlineAndVisibleTo(me))
 			{
-				onlineList += listpart;
+				memberOnlineNames.add(follower.getNameAndTitle(fme));
 			}
 			else
 			{
-				offlineList += listpart;
+				memberOfflineNames.add(follower.getNameAndTitle(fme));
 			}
 		}
+		
 		for (FPlayer follower : mods)
 		{
-			listpart = follower.getNameAndTitle(fme)+p.txt.parse("<i>")+", ";
-			if
-			(follower.isOnline())
+			if (follower.isOnlineAndVisibleTo(me))
 			{
-				onlineList += listpart;
-			} else {
-				offlineList += listpart;
+				memberOnlineNames.add(follower.getNameAndTitle(fme));
 			}
-		}
-		for (FPlayer follower : normals) {
-			listpart = follower.getNameAndTitle(fme)+p.txt.parse("<i>")+", ";
-			if (follower.isOnline()) {
-				onlineList += listpart;
-			} else {
-				offlineList += listpart;
+			else
+			{
+				memberOfflineNames.add(follower.getNameAndTitle(fme));
 			}
 		}
 		
-		if (onlineList.endsWith(", ")) {
-			onlineList = onlineList.substring(0, onlineList.length()-2);
-		}
-		if (offlineList.endsWith(", ")) {
-			offlineList = offlineList.substring(0, offlineList.length()-2);
+		for (FPlayer follower : normals)
+		{
+			if (follower.isOnlineAndVisibleTo(me))
+			{
+				memberOnlineNames.add(follower.getNameAndTitle(fme));
+			}
+			else
+			{
+				memberOfflineNames.add(follower.getNameAndTitle(fme));
+			}
 		}
 		
-		sendMessage(onlineList);
-		sendMessage(offlineList);
+		sendMessage(p.txt.parse("<a>Members online: ") + TextUtil.implode(memberOnlineNames, sepparator));
+		sendMessage(p.txt.parse("<a>Members offline: ") + TextUtil.implode(memberOfflineNames, sepparator));
 	}
 	
 }

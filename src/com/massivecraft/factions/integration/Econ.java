@@ -2,101 +2,99 @@ package com.massivecraft.factions.integration;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.logging.Level;
 
 import org.bukkit.Bukkit;
-import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.RegisteredServiceProvider;
 
-import com.nijikokun.register.Register;
-import com.nijikokun.register.payment.Method;
-import com.nijikokun.register.payment.Method.MethodAccount;
-import com.nijikokun.register.payment.Methods;
 import com.massivecraft.factions.Conf;
 import com.massivecraft.factions.FPlayer;
 import com.massivecraft.factions.Faction;
 import com.massivecraft.factions.Factions;
 import com.massivecraft.factions.P;
 import com.massivecraft.factions.iface.EconomyParticipator;
-import com.massivecraft.factions.struct.Permission;
-import com.massivecraft.factions.struct.Role;
+import com.massivecraft.factions.struct.FPerm;
 import com.massivecraft.factions.util.RelationUtil;
+
+import net.milkbowl.vault.economy.Economy;
+
 
 public class Econ
 {
-	private static Register register = null;
-	
-	public static Method getMethod()
+	private static Economy econ = null;
+
+	public static void setup()
 	{
-		if ( ! isSetup()) return null;
-		return Methods.getMethod();
+		if (isSetup()) return;
+
+		String integrationFail = "Economy integration is "+(Conf.econEnabled ? "enabled, but" : "disabled, and")+" the plugin \"Vault\" ";
+
+		if (Bukkit.getServer().getPluginManager().getPlugin("Vault") == null)
+		{
+			P.p.log(integrationFail+"is not installed.");
+			return;
+		}
+
+		RegisteredServiceProvider<Economy> rsp = Bukkit.getServer().getServicesManager().getRegistration(Economy.class);
+		if (rsp == null)
+		{
+			P.p.log(integrationFail+"is not hooked into an economy plugin.");
+			return;
+		}
+		econ = rsp.getProvider();
+
+		P.p.log("Economy integration through Vault plugin successful.");
+
+		if ( ! Conf.econEnabled)
+			P.p.log("NOTE: Economy is disabled. You can enable it with the command: f config econEnabled true");
+
+		//P.p.cmdBase.cmdHelp.updateHelp();
+
+		oldMoneyDoTransfer();
 	}
-	
+
 	public static boolean shouldBeUsed()
 	{
-		return Conf.econEnabled && register != null && register.isEnabled() && getMethod() != null;
+		return Conf.econEnabled && econ != null && econ.isEnabled();
 	}
 	
 	public static boolean isSetup()
 	{
-		return register != null;
+		return econ != null;
 	}
-	
-	public static void doSetup()
-	{
-		if (isSetup()) return;
-		
-		Plugin plug = Bukkit.getServer().getPluginManager().getPlugin("Register");
-		
-		if (plug != null && plug.getClass().getName().equals("com.nijikokun.register.Register"))
-		{
-			register = (Register)plug;
-				
-			P.p.log("Economy integration through Register plugin successful.");
 
-			if ( ! Conf.econEnabled)
-				P.p.log("NOTE: Economy is disabled. Enable in conf \"econEnabled\": true");
-		}
-		else
-		{
-			P.p.log("Economy integration is "+(Conf.econEnabled ? "enabled, but" : "disabled, and")+" the plugin \"Register\" is not installed.");
-		}
-		
-		P.p.cmdBase.cmdHelp.updateHelp();
-	}
-	
-	public static MethodAccount getUniverseAccount()
-	{
-		if (Conf.econUniverseAccount == null) return null;
-		if (Conf.econUniverseAccount.length() == 0) return null;
-		return getMethod().getAccount(Conf.econUniverseAccount);
-	}
-	
+
 	public static void modifyUniverseMoney(double delta)
 	{
 		if (!shouldBeUsed()) return;
 
-		MethodAccount acc = getUniverseAccount();
-		if (acc == null) return;
-		acc.add(delta);
+		if (Conf.econUniverseAccount == null) return;
+		if (Conf.econUniverseAccount.length() == 0) return;
+		if ( ! econ.hasAccount(Conf.econUniverseAccount)) return;
+
+		modifyBalance(Conf.econUniverseAccount, delta);
 	}
-	
+
 	public static void sendBalanceInfo(FPlayer to, EconomyParticipator about)
 	{
-		to.msg("<a>%s's<i> balance is <h>%s<i>.", about.describeTo(to, true), Econ.moneyString(about.getAccount().balance()));
+		if (!shouldBeUsed())
+		{
+			P.p.log(Level.WARNING, "Vault does not appear to be hooked into an economy plugin.");
+			return;
+		}
+		to.msg("<a>%s's<i> balance is <h>%s<i>.", about.describeTo(to, true), Econ.moneyString(econ.getBalance(about.getAccountId())));
 	}
-	
+
 	public static boolean canIControllYou(EconomyParticipator i, EconomyParticipator you)
 	{
-		Faction fInvoker = RelationUtil.getFaction(i);
-		Faction fFrom = RelationUtil.getFaction(you);
+		Faction fI = RelationUtil.getFaction(i);
+		Faction fYou = RelationUtil.getFaction(you);
 		
 		// This is a system invoker. Accept it.
-		if (fInvoker == null) return true;
+		if (fI == null) return true;
 		
 		// Bypassing players can do any kind of transaction
-		if (i instanceof FPlayer && ((FPlayer)i).isAdminBypassing()) return true;
-		
-		// Players with the any withdraw can do.
-		if (i instanceof FPlayer && Permission.MONEY_WITHDRAW_ANY.has(((FPlayer)i).getPlayer())) return true;
+		if (i instanceof FPlayer && ((FPlayer)i).hasAdminMode()) return true;
 		
 		// You can deposit to anywhere you feel like. It's your loss if you can't withdraw it again.
 		if (i == you) return true;
@@ -104,17 +102,21 @@ public class Econ
 		// A faction can always transfer away the money of it's members and its own money...
 		// This will however probably never happen as a faction does not have free will.
 		// Ohh by the way... Yes it could. For daily rent to the faction.
-		if (i == fInvoker && fInvoker == fFrom) return true;
+		if (i == fI && fI == fYou) return true;
 		
-		// If you are part of the same faction as from and members can withdraw or you are at least moderator... then it is ok.
-		if (fInvoker == fFrom && (Conf.bankMembersCanWithdraw || ((FPlayer)i).getRole().value >= Role.MODERATOR.value)) return true;
+		// Factions can be controlled by those that have permissions
+		if (you instanceof Faction && FPerm.WITHDRAW.has(i, fYou)) return true;
 		
 		// Otherwise you may not! ;,,;
-		i.msg("<h>%s<i> lack permission to controll <h>%s's<i> money.", i.describeTo(i, true), you.describeTo(i));
+		i.msg("<h>%s<i> lacks permission to control <h>%s's<i> money.", i.describeTo(i, true), you.describeTo(i));
 		return false;
 	}
 	
 	public static boolean transferMoney(EconomyParticipator invoker, EconomyParticipator from, EconomyParticipator to, double amount)
+	{
+		return transferMoney(invoker, from, to, amount, true);
+	}
+	public static boolean transferMoney(EconomyParticipator invoker, EconomyParticipator from, EconomyParticipator to, double amount, boolean notify)
 	{
 		if ( ! shouldBeUsed()) return false;
 
@@ -132,22 +134,22 @@ public class Econ
 		if ( ! canIControllYou(invoker, from)) return false;
 		
 		// Is there enough money for the transaction to happen?
-		if ( ! from.getAccount().hasEnough(amount))
+		if ( ! econ.has(from.getAccountId(), amount))
 		{
 			// There was not enough money to pay
-			if (invoker != null)
-			{
+			if (invoker != null && notify)
 				invoker.msg("<h>%s<b> can't afford to transfer <h>%s<b> to %s<b>.", from.describeTo(invoker, true), moneyString(amount), to.describeTo(invoker));
-			}
+
 			return false;
 		}
 		
 		// Transfer money
-		from.getAccount().subtract(amount);
-		to.getAccount().add(amount);
+		econ.withdrawPlayer(from.getAccountId(), amount);
+		econ.depositPlayer(to.getAccountId(), amount);
 		
 		// Inform
-		sendTransferInfo(invoker, from, to, amount);
+		if (notify)
+			sendTransferInfo(invoker, from, to, amount);
 		
 		return true;
 	}
@@ -208,21 +210,42 @@ public class Econ
 			}
 		}
 	}
-	
+
+	public static boolean hasAtLeast(EconomyParticipator ep, double delta, String toDoThis)
+	{
+		if ( ! shouldBeUsed()) return true;
+
+		if ( ! econ.has(ep.getAccountId(), delta))
+		{
+			if (toDoThis != null && !toDoThis.isEmpty())
+				ep.msg("<h>%s<i> can't afford <h>%s<i> %s.", ep.describeTo(ep, true), moneyString(delta), toDoThis);
+			return false;
+		}
+		return true;
+	}
+
 	public static boolean modifyMoney(EconomyParticipator ep, double delta, String toDoThis, String forDoingThis)
 	{
 		if ( ! shouldBeUsed()) return false;
 
-		MethodAccount acc = ep.getAccount();
+		String acc = ep.getAccountId();
 		String You = ep.describeTo(ep, true);
 		
-		if (delta >= 0)
+		if (delta == 0)
+		{
+			// no money actually transferred?
+//			ep.msg("<h>%s<i> didn't have to pay anything %s.", You, forDoingThis);  // might be for gains, might be for losses
+			return true;
+		}
+
+		if (delta > 0)
 		{
 			// The player should gain money
 			// There is no risk of failure
-			acc.add(delta);
+			econ.depositPlayer(acc, delta);
 			modifyUniverseMoney(-delta);
-			ep.msg("<h>%s<i> gained <h>%s<i> %s.", You, moneyString(delta), forDoingThis);
+			if (forDoingThis != null && !forDoingThis.isEmpty())
+				ep.msg("<h>%s<i> gained <h>%s<i> %s.", You, moneyString(delta), forDoingThis);
 			return true;
 		}
 		else
@@ -230,18 +253,20 @@ public class Econ
 			// The player should loose money
 			// The player might not have enough.
 			
-			if (acc.hasEnough(-delta))
+			if (econ.has(acc, -delta))
 			{
 				// There is enough money to pay
-				acc.add(delta);
+				econ.withdrawPlayer(acc, -delta);
 				modifyUniverseMoney(-delta);
-				ep.msg("<h>%s<i> lost <h>%s<i> %s.", You, moneyString(-delta), forDoingThis);
+				if (forDoingThis != null && !forDoingThis.isEmpty())
+					ep.msg("<h>%s<i> lost <h>%s<i> %s.", You, moneyString(-delta), forDoingThis);
 				return true;
 			}
 			else
 			{
 				// There was not enough money to pay
-				ep.msg("<h>%s<i> can't afford <h>%s<i> %s.", You, moneyString(-delta), toDoThis);
+				if (toDoThis != null && !toDoThis.isEmpty())
+					ep.msg("<h>%s<i> can't afford <h>%s<i> %s.", You, moneyString(-delta), toDoThis);
 				return false;
 			}
 		}
@@ -250,7 +275,7 @@ public class Econ
 	// format money string based on server's set currency type, like "24 gold" or "$24.50"
 	public static String moneyString(double amount)
 	{
-		return getMethod().format(amount);
+		return econ.format(amount);
 	}
 	
 	public static void oldMoneyDoTransfer()
@@ -259,8 +284,11 @@ public class Econ
 		
 		for (Faction faction : Factions.i.get())
 		{
-			faction.getAccount().add(faction.money);
-			faction.money = 0;
+			if (faction.money > 0)
+			{
+				econ.depositPlayer(faction.getAccountId(), faction.money);
+				faction.money = 0;
+			}
 		}
 	}
 
@@ -298,5 +326,47 @@ public class Econ
 	public static double calculateTotalLandRefund(int ownedLand)
 	{
 		return calculateTotalLandValue(ownedLand) * Conf.econClaimRefundMultiplier;
+	}
+
+
+	// -------------------------------------------- //
+	// Standard account management methods
+	// -------------------------------------------- //
+
+	public static boolean hasAccount(String name)
+	{
+		return econ.hasAccount(name);
+	}
+
+	public static double getBalance(String account)
+	{
+		return econ.getBalance(account);
+	}
+
+	public static boolean setBalance(String account, double amount)
+	{
+		double current = econ.getBalance(account);
+		if (current > amount)
+			return econ.withdrawPlayer(account, current - amount).transactionSuccess();
+		else
+			return econ.depositPlayer(account, amount - current).transactionSuccess();
+	}
+
+	public static boolean modifyBalance(String account, double amount)
+	{
+		if (amount < 0)
+			return econ.withdrawPlayer(account, -amount).transactionSuccess();
+		else
+			return econ.depositPlayer(account, amount).transactionSuccess();
+	}
+
+	public static boolean deposit(String account, double amount)
+	{
+		return econ.depositPlayer(account, amount).transactionSuccess();
+	}
+
+	public static boolean withdraw(String account, double amount)
+	{
+		return econ.withdrawPlayer(account, amount).transactionSuccess();
 	}
 }

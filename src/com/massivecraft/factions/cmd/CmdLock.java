@@ -7,8 +7,8 @@ public class CmdLock extends FCommand {
 	// TODO: This solution needs refactoring.
 	/*
 	   factions.lock:
-    description: use the /f lock [on/off] command to temporarily lock the data files from being overwritten
-    default: op
+	   description: use the /f lock [on/off] command to temporarily lock the data files from being overwritten
+	   default: op
 	 */
 	
 	public CmdLock()
@@ -24,8 +24,8 @@ public class CmdLock extends FCommand {
 		
 		senderMustBePlayer = false;
 		senderMustBeMember = false;
-		senderMustBeModerator = false;
-		senderMustBeAdmin = false;
+		senderMustBeOfficer = false;
+		senderMustBeLeader = false;
 	}
 	
 	@Override

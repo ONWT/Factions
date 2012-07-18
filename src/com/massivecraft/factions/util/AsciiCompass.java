@@ -21,8 +21,8 @@ public class AsciiCompass
 		
 		private Point(final char asciiChar)
 		{
-	        this.asciiChar = asciiChar;
-	    }
+			this.asciiChar = asciiChar;
+		}
 		
 		@Override
 		public String toString()
@@ -38,7 +38,7 @@ public class AsciiCompass
 	
 	public static AsciiCompass.Point getCompassPointForDirection(double inDegrees)
 	{
-		double degrees = (inDegrees - 90) % 360 ;
+		double degrees = (inDegrees - 180) % 360 ;
 		if (degrees < 0)
 			degrees += 360;
 		
@@ -62,7 +62,7 @@ public class AsciiCompass
 			return AsciiCompass.Point.N;
 		else
 			return null;
-    }
+	}
 	
 	public static ArrayList<String> getAsciiCompass(Point point, ChatColor colorActive, String colorDefault)
 	{

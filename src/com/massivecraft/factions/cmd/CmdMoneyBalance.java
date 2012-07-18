@@ -13,15 +13,15 @@ public class CmdMoneyBalance extends FCommand
 		this.aliases.add("balance");
 		
 		//this.requiredArgs.add("");
-		this.optionalArgs.put("faction", "yours");
+		this.optionalArgs.put("faction", "your");
 		
 		this.permission = Permission.MONEY_BALANCE.node;
 		this.setHelpShort("show faction balance");
 		
 		senderMustBePlayer = false;
 		senderMustBeMember = false;
-		senderMustBeModerator = false;
-		senderMustBeAdmin = false;
+		senderMustBeOfficer = false;
+		senderMustBeLeader = false;
 	}
 	
 	@Override

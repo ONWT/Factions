@@ -1,39 +1,48 @@
 package com.massivecraft.factions;
 
 import java.lang.reflect.Modifier;
-import java.lang.reflect.Type;
+import java.util.Arrays;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 
 import org.bukkit.block.Block;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
+import org.bukkit.event.player.PlayerChatEvent;
 import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.entity.Player;
-import org.bukkit.event.Event;
-import org.bukkit.event.player.PlayerChatEvent;
-import org.bukkit.plugin.Plugin;
 
+import com.massivecraft.factions.adapters.FFlagTypeAdapter;
+import com.massivecraft.factions.adapters.FPermTypeAdapter;
+import com.massivecraft.factions.adapters.LocationTypeAdapter;
+import com.massivecraft.factions.adapters.RelTypeAdapter;
 import com.massivecraft.factions.cmd.*;
+import com.massivecraft.factions.integration.capi.CapiFeatures;
 import com.massivecraft.factions.integration.Econ;
+import com.massivecraft.factions.integration.EssentialsFeatures;
+import com.massivecraft.factions.integration.HerochatFeatures;
+import com.massivecraft.factions.integration.LWCFeatures;
 import com.massivecraft.factions.integration.SpoutFeatures;
 import com.massivecraft.factions.integration.Worldguard;
 import com.massivecraft.factions.listeners.FactionsBlockListener;
-import com.massivecraft.factions.listeners.FactionsChatEarlyListener;
+import com.massivecraft.factions.listeners.FactionsChatListener;
 import com.massivecraft.factions.listeners.FactionsEntityListener;
+import com.massivecraft.factions.listeners.FactionsExploitListener;
+import com.massivecraft.factions.listeners.FactionsAppearanceListener;
 import com.massivecraft.factions.listeners.FactionsPlayerListener;
 import com.massivecraft.factions.listeners.FactionsServerListener;
-import com.massivecraft.factions.struct.ChatMode;
-import com.massivecraft.factions.util.MapFLocToStringSetTypeAdapter;
-import com.massivecraft.factions.util.MyLocationTypeAdapter;
+import com.massivecraft.factions.struct.FFlag;
+import com.massivecraft.factions.struct.FPerm;
+import com.massivecraft.factions.struct.Rel;
+import com.massivecraft.factions.struct.TerritoryAccess;
+import com.massivecraft.factions.util.AutoLeaveTask;
+import com.massivecraft.factions.util.LazyLocation;
 import com.massivecraft.factions.zcore.MPlugin;
+import com.massivecraft.factions.zcore.util.TextUtil;
 
-import com.nijiko.permissions.PermissionHandler;
-import com.earth2me.essentials.chat.EssentialsChat;
 import com.google.gson.GsonBuilder;
-import com.google.gson.reflect.TypeToken;
-import com.massivecraft.factions.integration.EssentialsFeatures;
-import com.massivecraft.factions.integration.capi.CapiFeatures;
+
 
 public class P extends MPlugin
 {
@@ -42,15 +51,18 @@ public class P extends MPlugin
 	
 	// Listeners
 	public final FactionsPlayerListener playerListener;
-	public final FactionsChatEarlyListener chatEarlyListener;
+	public final FactionsChatListener chatListener;
 	public final FactionsEntityListener entityListener;
+	public final FactionsExploitListener exploitListener;
 	public final FactionsBlockListener blockListener;
 	public final FactionsServerListener serverListener;
+	public final FactionsAppearanceListener appearanceListener;
 	
 	// Persistance related
 	private boolean locked = false;
 	public boolean getLocked() {return this.locked;}
 	public void setLocked(boolean val) {this.locked = val; this.setAutoSave(val);}
+	private Integer AutoLeaveTask = null;
 	
 	// Commands
 	public FCmdRoot cmdBase;
@@ -60,23 +72,21 @@ public class P extends MPlugin
 	{
 		p = this;
 		this.playerListener = new FactionsPlayerListener(this);
-		this.chatEarlyListener = new FactionsChatEarlyListener(this);
+		this.chatListener = new FactionsChatListener(this);
 		this.entityListener = new FactionsEntityListener(this);
+		this.exploitListener = new FactionsExploitListener();
 		this.blockListener = new FactionsBlockListener(this);
 		this.serverListener = new FactionsServerListener(this);
+		this.appearanceListener = new FactionsAppearanceListener(this);
 	}
-	
-	
-	
-	public static PermissionHandler Permissions;
-	private static EssentialsChat essChat;
-	
-	
+
+
 	@Override
 	public void onEnable()
 	{
 		if ( ! preEnable()) return;
-		
+		this.loadSuccessful = false;
+
 		// Load Conf from disk
 		Conf.load();
 		FPlayers.i.loadFromDisc();
@@ -84,82 +94,88 @@ public class P extends MPlugin
 		Board.load();
 		
 		// Add Base Commands
-		this.cmdBase = new FCmdRoot();
 		this.cmdAutoHelp = new CmdAutoHelp();
+		this.cmdBase = new FCmdRoot();
 		this.getBaseCommands().add(cmdBase);
-		
-		//setupPermissions();
-		integrateEssentialsChat();
-		setupSpout(this);
-		Econ.doSetup();
-		Econ.oldMoneyDoTransfer();
+
+		EssentialsFeatures.setup();
+		SpoutFeatures.setup();
+		Econ.setup();
 		CapiFeatures.setup();
+		HerochatFeatures.setup();
+		LWCFeatures.setup();
 		
 		if(Conf.worldGuardChecking)
 		{
-			Worldguard.init(this);			
+			Worldguard.init(this);
 		}
-		
-		// Player Events
-		this.registerEvent(Event.Type.PLAYER_CHAT, this.playerListener, Event.Priority.Highest);
-		this.registerEvent(Event.Type.PLAYER_CHAT, this.chatEarlyListener, Event.Priority.Lowest);
-		this.registerEvent(Event.Type.PLAYER_COMMAND_PREPROCESS, this.playerListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.PLAYER_INTERACT, this.playerListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.PLAYER_MOVE, this.playerListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.PLAYER_JOIN, this.playerListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.PLAYER_QUIT, this.playerListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.PLAYER_RESPAWN, this.playerListener, Event.Priority.High);
-		this.registerEvent(Event.Type.PLAYER_BUCKET_EMPTY, this.playerListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.PLAYER_BUCKET_FILL, this.playerListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.PLAYER_KICK, this.playerListener, Event.Priority.Normal);
-		
-		// Entity Events
-		this.registerEvent(Event.Type.ENDERMAN_PICKUP, this.entityListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.ENDERMAN_PLACE, this.entityListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.ENTITY_DEATH, this.entityListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.ENTITY_DAMAGE, this.entityListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.ENTITY_EXPLODE, this.entityListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.CREATURE_SPAWN, this.entityListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.ENTITY_TARGET, this.entityListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.PAINTING_BREAK, this.entityListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.PAINTING_PLACE, this.entityListener, Event.Priority.Normal);
-		
-		// Block Events
-		this.registerEvent(Event.Type.BLOCK_BREAK, this.blockListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.BLOCK_DAMAGE, this.blockListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.BLOCK_PLACE, this.blockListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.BLOCK_PISTON_EXTEND, this.blockListener, Event.Priority.Normal);
-		this.registerEvent(Event.Type.BLOCK_PISTON_RETRACT, this.blockListener, Event.Priority.Normal);
-		
-		// Server Events
-		this.registerEvent(Event.Type.PLUGIN_ENABLE, this.serverListener, Event.Priority.Monitor);
-		this.registerEvent(Event.Type.PLUGIN_DISABLE, this.serverListener, Event.Priority.Monitor);
-		
+
+		// start up task which runs the autoLeaveAfterDaysOfInactivity routine
+		startAutoLeaveTask(false);
+
+		// Register Event Handlers
+		getServer().getPluginManager().registerEvents(this.playerListener, this);
+		getServer().getPluginManager().registerEvents(this.chatListener, this);
+		getServer().getPluginManager().registerEvents(this.entityListener, this);
+		getServer().getPluginManager().registerEvents(this.exploitListener, this);
+		getServer().getPluginManager().registerEvents(this.blockListener, this);
+		getServer().getPluginManager().registerEvents(this.serverListener, this);
+		getServer().getPluginManager().registerEvents(this.appearanceListener, this);
+
+		// since some other plugins execute commands directly through this command interface, provide it
+		this.getCommand(this.refCommand).setExecutor(this);
+
 		postEnable();
+		this.loadSuccessful = true;
 	}
 	
 	@Override
 	public GsonBuilder getGsonBuilder()
 	{
-		Type mapFLocToStringSetType = new TypeToken<Map<FLocation, Set<String>>>(){}.getType();
-
 		return new GsonBuilder()
 		.setPrettyPrinting()
 		.disableHtmlEscaping()
 		.excludeFieldsWithModifiers(Modifier.TRANSIENT, Modifier.VOLATILE)
-		.registerTypeAdapter(Location.class, new MyLocationTypeAdapter())
-		.registerTypeAdapter(mapFLocToStringSetType, new MapFLocToStringSetTypeAdapter());
+		.registerTypeAdapter(LazyLocation.class, new LocationTypeAdapter())
+		.registerTypeAdapter(TerritoryAccess.class, new TerritoryAccess())
+		.registerTypeAdapter(Rel.class, new RelTypeAdapter())
+		.registerTypeAdapter(FPerm.class, new FPermTypeAdapter())
+		.registerTypeAdapter(FFlag.class, new FFlagTypeAdapter());
 	}
 
 	@Override
 	public void onDisable()
 	{
-		Board.save();
-		Conf.save();
-		unhookEssentialsChat();
+		// only save data if plugin actually completely loaded successfully
+		if (this.loadSuccessful)
+		{
+			Board.save();
+			Conf.save();
+		}
+		EssentialsFeatures.unhookChat();
+		if (AutoLeaveTask != null)
+		{
+			this.getServer().getScheduler().cancelTask(AutoLeaveTask);
+			AutoLeaveTask = null;
+		}
 		super.onDisable();
 	}
-	
+
+	public void startAutoLeaveTask(boolean restartIfRunning)
+	{
+		if (AutoLeaveTask != null)
+		{
+			if ( ! restartIfRunning) return;
+			this.getServer().getScheduler().cancelTask(AutoLeaveTask);
+		}
+
+		if (Conf.autoLeaveRoutineRunsEveryXMinutes > 0.0)
+		{
+			long ticks = (long)(20 * 60 * Conf.autoLeaveRoutineRunsEveryXMinutes);
+			AutoLeaveTask = getServer().getScheduler().scheduleSyncRepeatingTask(this, new AutoLeaveTask(), ticks, ticks);
+		}
+	}
+
 	@Override
 	public void postAutoSave()
 	{
@@ -167,40 +183,32 @@ public class P extends MPlugin
 		Conf.save();
 	}
 
-	// -------------------------------------------- //
-	// Integration with other plugins
-	// -------------------------------------------- //
-
-	private void setupSpout(P factions)
+	@Override
+	public boolean logPlayerCommands()
 	{
-		Plugin test = factions.getServer().getPluginManager().getPlugin("Spout");
-
-		if (test != null && test.isEnabled())
-		{
-			SpoutFeatures.setAvailable(true, test.getDescription().getFullName());
-		}
+		return Conf.logPlayerCommands;
 	}
 
-	private void integrateEssentialsChat()
+	@Override
+	public boolean handleCommand(CommandSender sender, String commandString, boolean testOnly)
 	{
-		if (essChat != null) return;
+		if (sender instanceof Player && FactionsPlayerListener.preventCommand(commandString, (Player)sender)) return true;
 
-		Plugin test = this.getServer().getPluginManager().getPlugin("EssentialsChat");
-
-		if (test != null && test.isEnabled())
-		{
-			essChat = (EssentialsChat)test;
-			EssentialsFeatures.integrateChat(essChat);
-		}
+		return super.handleCommand(sender, commandString, testOnly);
 	}
-	
-	private void unhookEssentialsChat()
+
+	@Override
+	public boolean onCommand(CommandSender sender, Command command, String label, String[] split)
 	{
-		if (essChat != null)
-		{
-			EssentialsFeatures.unhookChat();
-		}
+		// if bare command at this point, it has already been handled by MPlugin's command listeners
+		if (split == null || split.length == 0) return true;
+
+		// otherwise, needs to be handled; presumably another plugin directly ran the command
+		String cmd = Conf.baseCommandAliases.isEmpty() ? "/f" : "/" + Conf.baseCommandAliases.get(0);
+		return handleCommand(sender, cmd + " " + TextUtil.implode(Arrays.asList(split), " "), false);
 	}
+
+
 
 	// -------------------------------------------- //
 	// Functions for other plugins to hook into
@@ -230,19 +238,15 @@ public class P extends MPlugin
 
 	// Does player have Faction Chat enabled? If so, chat plugins should preferably not do channels,
 	// local chat, or anything else which targets individual recipients, so Faction Chat can be done
+	/**
+	 * @deprecated  As of release 1.8, there is no built in faction chat.
+	 */
 	public boolean isPlayerFactionChatting(Player player)
 	{
-		if (player == null) return false;
-		FPlayer me = FPlayers.i.get(player);
-		
-		if (me == null)return false;
-		return me.getChatMode().isAtLeast(ChatMode.ALLIANCE);
+		return false;
 	}
 
 	// Is this chat message actually a Factions command, and thus should be left alone by other plugins?
-	
-	// TODO: GET THIS BACK AND WORKING
-	
 	public boolean isFactionsCommand(String check)
 	{
 		if (check == null || check.isEmpty()) return false;
@@ -268,7 +272,7 @@ public class P extends MPlugin
 			return tag;
 
 		// if listener isn't set, or config option is disabled, give back uncolored tag
-		if (listener == null || !Conf.chatTagRelationColored) {
+		if (listener == null || !Conf.chatParseTagsColored) {
 			tag = me.getChatTag().trim();
 		} else {
 			FPlayer you = FPlayers.i.get(listener);
@@ -311,7 +315,7 @@ public class P extends MPlugin
 	public Set<String> getPlayersInFaction(String factionTag)
 	{
 		Set<String> players = new HashSet<String>();
-		Faction faction = Factions.i.findByTag(factionTag);
+		Faction faction = Factions.i.getByTag(factionTag);
 		if (faction != null)
 		{
 			for (FPlayer fplayer : faction.getFPlayers())
@@ -326,7 +330,7 @@ public class P extends MPlugin
 	public Set<String> getOnlinePlayersInFaction(String factionTag)
 	{
 		Set<String> players = new HashSet<String>();
-		Faction faction = Factions.i.findByTag(factionTag);
+		Faction faction = Factions.i.getByTag(factionTag);
 		if (faction != null)
 		{
 			for (FPlayer fplayer : faction.getFPlayersWhereOnline(true))
@@ -340,7 +344,7 @@ public class P extends MPlugin
 	// check if player is allowed to build/destroy in a particular location
 	public boolean isPlayerAllowedToBuildHere(Player player, Location location)
 	{
-		return FactionsBlockListener.playerCanBuildDestroyBlock(player, location, "", true);
+		return FactionsBlockListener.playerCanBuildDestroyBlock(player, location.getBlock(), "", true);
 	}
 
 	// check if player is allowed to interact with the specified block (doors/chests/whatever)

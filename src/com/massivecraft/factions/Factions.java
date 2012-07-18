@@ -10,8 +10,12 @@ import java.util.logging.Level;
 import org.bukkit.ChatColor;
 
 import com.google.gson.reflect.TypeToken;
+import com.massivecraft.factions.struct.FFlag;
+import com.massivecraft.factions.struct.FPerm;
+import com.massivecraft.factions.struct.Rel;
 import com.massivecraft.factions.util.MiscUtil;
 import com.massivecraft.factions.zcore.persist.EntityCollection;
+import com.massivecraft.factions.zcore.util.TextUtil;
 
 public class Factions extends EntityCollection<Faction>
 {
@@ -42,31 +46,130 @@ public class Factions extends EntityCollection<Faction>
 	{
 		if ( ! super.loadFromDisc()) return false;
 		
-		// Make sure the default neutral faction exists
+		//----------------------------------------------//
+		// Create Default Special Factions
+		//----------------------------------------------//
 		if ( ! this.exists("0"))
 		{
 			Faction faction = this.create("0");
 			faction.setTag(ChatColor.DARK_GREEN+"Wilderness");
 			faction.setDescription("");
+			this.setFlagsForWilderness(faction);
 		}
-		
-		// Make sure the safe zone faction exists
 		if ( ! this.exists("-1"))
 		{
 			Faction faction = this.create("-1");
-			faction.setTag(ChatColor.GOLD+"Safe Zone");
+			faction.setTag("SafeZone");
 			faction.setDescription("Free from PVP and monsters");
+			
+			this.setFlagsForSafeZone(faction);
 		}
-		
-		// Make sure the war zone faction exists
 		if ( ! this.exists("-2"))
 		{
 			Faction faction = this.create("-2");
-			faction.setTag(ChatColor.DARK_RED+"War Zone");
+			faction.setTag("WarZone");
 			faction.setDescription("Not the safest place to be");
+			this.setFlagsForWarZone(faction);
 		}
 		
+		//----------------------------------------------//
+		// Fix From Old Formats
+		//----------------------------------------------//
+		Faction wild = this.get("0");
+		Faction safeZone = this.get("-1");
+		Faction warZone = this.get("-2");
+		
+		// Remove troublesome " " from old pre-1.6.0 names
+		if (safeZone != null && safeZone.getTag().contains(" "))
+			safeZone.setTag("SafeZone");
+		if (warZone != null && warZone.getTag().contains(" "))
+			warZone.setTag("WarZone");
+		
+		// Set Flags if they are not set already.
+		if (wild != null && ! wild.getFlag(FFlag.PERMANENT))
+			setFlagsForWilderness(wild);
+		if (safeZone != null && ! safeZone.getFlag(FFlag.PERMANENT))
+			setFlagsForSafeZone(safeZone);
+		if (warZone != null && ! warZone.getFlag(FFlag.PERMANENT))
+			setFlagsForWarZone(warZone);
+
+		// populate all faction player lists
+		for (Faction faction : i.get())
+		{
+			faction.refreshFPlayers();
+		}
+
 		return true;
+	}
+	
+	//----------------------------------------------//
+	// Flag Setters
+	//----------------------------------------------//
+	public void setFlagsForWilderness(Faction faction)
+	{
+		faction.setOpen(false);
+		
+		faction.setFlag(FFlag.PERMANENT, true);
+		faction.setFlag(FFlag.PEACEFUL, false);
+		faction.setFlag(FFlag.INFPOWER, true);
+		faction.setFlag(FFlag.POWERLOSS, true);
+		faction.setFlag(FFlag.PVP, true);
+		faction.setFlag(FFlag.FRIENDLYFIRE, false);
+		faction.setFlag(FFlag.MONSTERS, true);
+		faction.setFlag(FFlag.EXPLOSIONS, true);
+		faction.setFlag(FFlag.FIRESPREAD, true);
+		//faction.setFlag(FFlag.LIGHTNING, true);
+		faction.setFlag(FFlag.ENDERGRIEF, true);
+		
+		faction.setPermittedRelations(FPerm.BUILD, Rel.LEADER, Rel.OFFICER, Rel.MEMBER, Rel.ALLY, Rel.TRUCE, Rel.NEUTRAL, Rel.ENEMY);
+		faction.setPermittedRelations(FPerm.DOOR, Rel.LEADER, Rel.OFFICER, Rel.MEMBER, Rel.ALLY, Rel.TRUCE, Rel.NEUTRAL, Rel.ENEMY);
+		faction.setPermittedRelations(FPerm.CONTAINER, Rel.LEADER, Rel.OFFICER, Rel.MEMBER, Rel.ALLY, Rel.TRUCE, Rel.NEUTRAL, Rel.ENEMY);
+		faction.setPermittedRelations(FPerm.BUTTON, Rel.LEADER, Rel.OFFICER, Rel.MEMBER, Rel.ALLY, Rel.TRUCE, Rel.NEUTRAL, Rel.ENEMY);
+		faction.setPermittedRelations(FPerm.LEVER, Rel.LEADER, Rel.OFFICER, Rel.MEMBER, Rel.ALLY, Rel.TRUCE, Rel.NEUTRAL, Rel.ENEMY);
+	}
+	
+	public void setFlagsForSafeZone(Faction faction)
+	{
+		faction.setOpen(false);
+		
+		faction.setFlag(FFlag.PERMANENT, true);
+		faction.setFlag(FFlag.PEACEFUL, true);
+		faction.setFlag(FFlag.INFPOWER, true);
+		faction.setFlag(FFlag.POWERLOSS, false);
+		faction.setFlag(FFlag.PVP, false);
+		faction.setFlag(FFlag.FRIENDLYFIRE, false);
+		faction.setFlag(FFlag.MONSTERS, false);
+		faction.setFlag(FFlag.EXPLOSIONS, false);
+		faction.setFlag(FFlag.FIRESPREAD, false);
+		//faction.setFlag(FFlag.LIGHTNING, false);
+		faction.setFlag(FFlag.ENDERGRIEF, false);
+		
+		faction.setPermittedRelations(FPerm.DOOR, Rel.LEADER, Rel.OFFICER, Rel.MEMBER, Rel.ALLY, Rel.TRUCE, Rel.NEUTRAL, Rel.ENEMY);
+		faction.setPermittedRelations(FPerm.CONTAINER, Rel.LEADER, Rel.OFFICER, Rel.MEMBER, Rel.ALLY, Rel.TRUCE, Rel.NEUTRAL, Rel.ENEMY);
+		faction.setPermittedRelations(FPerm.BUTTON, Rel.LEADER, Rel.OFFICER, Rel.MEMBER, Rel.ALLY, Rel.TRUCE, Rel.NEUTRAL, Rel.ENEMY);
+		faction.setPermittedRelations(FPerm.LEVER, Rel.LEADER, Rel.OFFICER, Rel.MEMBER, Rel.ALLY, Rel.TRUCE, Rel.NEUTRAL, Rel.ENEMY);
+	}
+	
+	public void setFlagsForWarZone(Faction faction)
+	{
+		faction.setOpen(false);
+		
+		faction.setFlag(FFlag.PERMANENT, true);
+		faction.setFlag(FFlag.PEACEFUL, true);
+		faction.setFlag(FFlag.INFPOWER, true);
+		faction.setFlag(FFlag.POWERLOSS, true);
+		faction.setFlag(FFlag.PVP, true);
+		faction.setFlag(FFlag.FRIENDLYFIRE, true);
+		faction.setFlag(FFlag.MONSTERS, true);
+		faction.setFlag(FFlag.EXPLOSIONS, true);
+		faction.setFlag(FFlag.FIRESPREAD, true);
+		//faction.setFlag(FFlag.LIGHTNING, true);
+		faction.setFlag(FFlag.ENDERGRIEF, true);
+		
+		faction.setPermittedRelations(FPerm.DOOR, Rel.LEADER, Rel.OFFICER, Rel.MEMBER, Rel.ALLY, Rel.TRUCE, Rel.NEUTRAL, Rel.ENEMY);
+		faction.setPermittedRelations(FPerm.CONTAINER, Rel.LEADER, Rel.OFFICER, Rel.MEMBER, Rel.ALLY, Rel.TRUCE, Rel.NEUTRAL, Rel.ENEMY);
+		faction.setPermittedRelations(FPerm.BUTTON, Rel.LEADER, Rel.OFFICER, Rel.MEMBER, Rel.ALLY, Rel.TRUCE, Rel.NEUTRAL, Rel.ENEMY);
+		faction.setPermittedRelations(FPerm.LEVER, Rel.LEADER, Rel.OFFICER, Rel.MEMBER, Rel.ALLY, Rel.TRUCE, Rel.NEUTRAL, Rel.ENEMY);
 	}
 	
 	
@@ -92,21 +195,6 @@ public class Factions extends EntityCollection<Faction>
 		return this.get("0");
 	}
 	
-	public Faction getSafeZone()
-	{
-		return this.get("-1");
-	}
-	
-	public Faction getWarZone()
-	{
-		return this.get("-2");
-	}
-	
-	
-	
-	
-	
-	
 	//----------------------------------------------//
 	// Faction tag
 	//----------------------------------------------//
@@ -117,26 +205,26 @@ public class Factions extends EntityCollection<Faction>
 		
 		if(MiscUtil.getComparisonString(str).length() < Conf.factionTagLengthMin)
 		{
-			errors.add(P.p.txt.parse("<i>The faction tag can't be shorter than "+Conf.factionTagLengthMin+ " chars."));
+			errors.add(P.p.txt.parse("<i>The faction tag can't be shorter than <h>%s<i> chars.", Conf.factionTagLengthMin));
 		}
 		
 		if(str.length() > Conf.factionTagLengthMax)
 		{
-			errors.add(P.p.txt.parse("<i>The faction tag can't be longer than "+Conf.factionTagLengthMax+ " chars."));
+			errors.add(P.p.txt.parse("<i>The faction tag can't be longer than <h>%s<i> chars.", Conf.factionTagLengthMax));
 		}
 		
 		for (char c : str.toCharArray())
 		{
 			if ( ! MiscUtil.substanceChars.contains(String.valueOf(c)))
 			{
-				errors.add(P.p.txt.parse("<i>Faction tag must be alphanumeric. \""+c+"\" is not allowed."));
+				errors.add(P.p.txt.parse("<i>Faction tag must be alphanumeric. \"<h>%s<i>\" is not allowed.", c));
 			}
 		}
 		
 		return errors;
 	}
 	
-	public Faction findByTag(String str)
+	public Faction getByTag(String str)
 	{
 		String compStr = MiscUtil.getComparisonString(str);
 		for (Faction faction : this.get())
@@ -149,9 +237,24 @@ public class Factions extends EntityCollection<Faction>
 		return null;
 	}
 	
+	public Faction getBestTagMatch(String searchFor)
+	{
+		Map<String, Faction> tag2faction = new HashMap<String, Faction>();
+		
+		// TODO: Slow index building
+		for (Faction faction : this.get())
+		{
+			tag2faction.put(ChatColor.stripColor(faction.getTag()), faction);
+		}
+		
+		String tag = TextUtil.getBestStartWithCI(tag2faction.keySet(), searchFor);
+		if (tag == null) return null;
+		return tag2faction.get(tag);
+	}
+	
 	public boolean isTagTaken(String str)
 	{
-		return this.findByTag(str) != null;
+		return this.getByTag(str) != null;
 	}
 
 }

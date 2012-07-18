@@ -1,301 +1,297 @@
 package com.massivecraft.factions.integration;
 
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Set;
 
 import com.massivecraft.factions.Conf;
 import com.massivecraft.factions.FPlayer;
 import com.massivecraft.factions.FPlayers;
 import com.massivecraft.factions.Faction;
+import com.massivecraft.factions.FLocation;
 import com.massivecraft.factions.P;
 
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.entity.Player;
-import org.bukkit.event.Event;
 
-import com.massivecraft.factions.struct.Relation;
-import com.massivecraft.factions.struct.Role;
+import com.massivecraft.factions.util.HealthBarUtil;
 
-import org.getspout.spoutapi.gui.Color;
-import org.getspout.spoutapi.player.AppearanceManager;
 import org.getspout.spoutapi.player.SpoutPlayer;
 import org.getspout.spoutapi.SpoutManager;
 
 
 public class SpoutFeatures
 {
-	private transient static AppearanceManager spoutApp;
-	private transient static boolean spoutMe = false;
-	private transient static SpoutMainListener mainListener;
-	private transient static boolean listenersHooked;
+	// -------------------------------------------- //
+	// FIELDS
+	// -------------------------------------------- //
+	
+	private static SpoutMainListener mainListener;
+	
+	private static boolean enabled = false;
+	public static boolean isEnabled() { return enabled; }
 
-	// set integration availability
-	public static void setAvailable(boolean enable, String pluginName)
+	// -------------------------------------------- //
+	// SETUP AND AVAILABILITY
+	// -------------------------------------------- //
+	
+	public static boolean setup()
 	{
-		spoutMe = enable;
-		if (spoutMe)
+		Plugin plugin = Bukkit.getPluginManager().getPlugin("Spout");
+		if (plugin == null || ! plugin.isEnabled())
 		{
-			spoutApp = SpoutManager.getAppearanceManager();
-			P.p.log("Found and will use features of "+pluginName);
+			if (enabled == false) return false;
+			enabled = false;
+			return false;
+		}
+		
+		if (enabled == true) return true;
+		enabled = true;
+		
+		P.p.log("Found and will use features of "+plugin.getDescription().getFullName());
+		mainListener = new SpoutMainListener();
+		Bukkit.getPluginManager().registerEvents(mainListener, P.p);
+		
+		return true;
+	}
 
-			if (!listenersHooked)
+	// -------------------------------------------- //
+	// CAPES
+	// -------------------------------------------- //
+	// Capes look the same to everyone.
+	
+	public static void updateCape(final Object ofrom, final Object oto, boolean onlyIfDifferent)
+	{
+		// Enabled and non-null?
+		if ( ! isEnabled()) return;
+		if ( ! Conf.spoutCapes) return;
+		
+		Set<Player> fromPlayers = getPlayersFromObject(ofrom);
+		Set<Player> toPlayers = getPlayersFromObject(oto);
+		
+		for (Player player : fromPlayers)
+		{
+			FPlayer fplayer = FPlayers.i.get(player);
+			SpoutPlayer splayer = SpoutManager.getPlayer(player);
+			Faction faction = fplayer.getFaction();
+			
+			String cape = faction.getCape();
+			if (cape == null)
 			{
-				listenersHooked = true;
-				mainListener = new SpoutMainListener();
-				P.p.registerEvent(Event.Type.CUSTOM_EVENT, mainListener, Event.Priority.Normal);
+				cape = "http://s3.amazonaws.com/MinecraftCloaks/" + player.getName() + ".png";
 			}
+			
+			for (Player playerTo : toPlayers)
+			{
+				SpoutPlayer splayerTo = SpoutManager.getPlayer(playerTo);
+				
+				boolean skip = onlyIfDifferent && cape.equals(splayer.getCape(splayerTo));
+				//Bukkit.getConsoleSender().sendMessage(P.p.txt.parse("<i>CAPE SKIP:<h>%s <i>FROM <h>%s <i>TO <h>%s <i>URL <h>%s", String.valueOf(skip), player.getDisplayName(), playerTo.getDisplayName(), cape));
+				if (skip) continue;
+				//Bukkit.getConsoleSender().sendMessage(P.p.txt.parse("<i>CAPE FROM <h>%s <i>TO <h>%s <i>URL <h>%s", player.getDisplayName(), playerTo.getDisplayName(), cape));
+				
+				// Set the cape
+				try
+				{
+					splayer.setCapeFor(splayerTo, cape);
+				}
+				catch (Exception e)
+				{
+					
+				}
+			}	
+		}
+	}
+	
+	public static void updateCape(final Object ofrom, final Object oto)
+	{
+		updateCape(ofrom, oto, true);
+	}
+	
+	public static void updateCapeShortly(final Object ofrom, final Object oto)
+	{
+		P.p.getServer().getScheduler().scheduleSyncDelayedTask(P.p, new Runnable()
+		{
+			@Override
+			public void run()
+			{
+				updateCape(ofrom, oto, false);
+			}
+		}, 5);
+	}
+	
+	// -------------------------------------------- //
+	// TITLE
+	// -------------------------------------------- //
+	
+	public static void updateTitle(final Object ofrom, final Object oto, boolean onlyIfDifferent)
+	{
+		// Enabled and non-null?
+		if ( ! isEnabled()) return;
+		if ( ! (Conf.spoutFactionTagsOverNames || Conf.spoutFactionTitlesOverNames || Conf.spoutHealthBarUnderNames)) return;
+		
+		Set<Player> fromPlayers = getPlayersFromObject(ofrom);
+		Set<Player> toPlayers = getPlayersFromObject(oto);
+		
+		for (Player player : fromPlayers)
+		{
+			FPlayer fplayer = FPlayers.i.get(player);
+			SpoutPlayer splayer = SpoutManager.getPlayer(player);
+			Faction faction = fplayer.getFaction();
+			
+			for (Player playerTo : toPlayers)
+			{
+				FPlayer fplayerTo = FPlayers.i.get(playerTo);
+				SpoutPlayer splayerTo = SpoutManager.getPlayer(playerTo);
+				Faction factionTo = fplayerTo.getFaction();
+				
+				ChatColor relationColor = faction.getRelationTo(factionTo).getColor();
+				
+				String title = generateTitle(player, fplayer, faction, relationColor);
+				
+				boolean skip = onlyIfDifferent && title.equals(splayer.getTitleFor(splayerTo));
+				//Bukkit.getConsoleSender().sendMessage(P.p.txt.parse("<i>TITLE SKIP:<h>%s <i>FROM <h>%s <i>TO <h>%s <i>TITLE <h>%s", String.valueOf(skip), player.getDisplayName(), playerTo.getDisplayName(), title));
+				if (skip) continue;
+				//Bukkit.getConsoleSender().sendMessage(P.p.txt.parse("<i>TITLE FROM <h>%s <i>TO <h>%s <i>TITLE <h>%s", player.getDisplayName(), playerTo.getDisplayName(), title));
+				
+				splayer.setTitleFor(splayerTo, title);
+			}	
+		}
+	}
+	
+	public static void updateTitle(final Object ofrom, final Object oto)
+	{
+		updateTitle(ofrom, oto, true);
+	}
+	
+	public static void updateTitleShortly(final Object ofrom, final Object oto)
+	{
+		P.p.getServer().getScheduler().scheduleSyncDelayedTask(P.p, new Runnable()
+		{
+			@Override
+			public void run()
+			{
+				updateTitle(ofrom, oto, false);
+			}
+		}, 5);
+	}
+	
+	public static String generateTitle(Player player, FPlayer fplayer, Faction faction, ChatColor relationColor)
+	{
+		String ret = null;
+		
+		ret = player.getDisplayName();
+		
+		if (faction.isNormal())
+		{
+			String addTag = "";
+			if (Conf.spoutFactionTagsOverNames)
+			{
+				addTag += relationColor.toString() + fplayer.getRole().getPrefix() + faction.getTag();
+			}
+				
+			if (Conf.spoutFactionTitlesOverNames && ! fplayer.getTitle().isEmpty())
+			{
+				addTag += (addTag.isEmpty() ? "" : " ") + fplayer.getTitle();
+			}
+
+			ret = addTag + "\n" + ret;
+		}
+		
+		if (Conf.spoutHealthBarUnderNames)
+		{
+			ret += "\n";
+			ret += HealthBarUtil.getHealthbar(player.getHealth() / 20d);
+		}
+		
+		return ret;
+	}
+	
+	// -------------------------------------------- //
+	// UTIL
+	// -------------------------------------------- //
+	
+	public static Set<Player> getPlayersFromObject(Object o)
+	{
+		Set<Player> ret = new HashSet<Player>();
+		if (o instanceof Player)
+		{
+			ret.add((Player)o);
+		}
+		else if (o instanceof FPlayer)
+		{
+			FPlayer fplayer = (FPlayer)o;
+			Player player = fplayer.getPlayer();
+			if (player != null)
+			{
+				ret.add(player);
+			}
+		}
+		else if (o instanceof Faction)
+		{
+			ret.addAll(((Faction)o).getOnlinePlayers());
 		}
 		else
 		{
-			spoutApp = null;
+			ret.addAll(Arrays.asList(Bukkit.getOnlinePlayers()));
+		}
+			
+		return ret;
+	}
+	
+	// -------------------------------------------- //
+	// TERRITORY DISPLAY
+	// -------------------------------------------- //
+
+	// update displayed current territory for all players inside a specified chunk; if specified chunk is null, then simply update everyone online
+	public static void updateTerritoryDisplayLoc(FLocation fLoc)
+	{
+		if ( ! isEnabled()) return;
+
+		Set<FPlayer> players = FPlayers.i.getOnline();
+
+		for (FPlayer player : players)
+		{
+			if (fLoc == null)
+				mainListener.updateTerritoryDisplay(player, false);
+			else if (player.getLastStoodAt().equals(fLoc))
+				mainListener.updateTerritoryDisplay(player, true);
 		}
 	}
-
-	// If we're successfully hooked into Spout
-	public static boolean enabled()
-	{
-		return spoutMe;
-	}
-
-	// If Spout is available and the specified Player is running the Spoutcraft client
-	public static boolean availableFor(Player player)
-	{
-		return spoutMe && SpoutManager.getPlayer(player).isSpoutCraftEnabled();
-	}
-
 
 	// update displayed current territory for specified player; returns false if unsuccessful
 	public static boolean updateTerritoryDisplay(FPlayer player)
 	{
-		if (!enabled())
-			return false;
+		if ( ! isEnabled()) return false;
+		return mainListener.updateTerritoryDisplay(player, true);
+	}
 
-		return mainListener.updateTerritoryDisplay(player);
+	// update access info for all players inside a specified chunk; if specified chunk is null, then simply update everyone online
+	public static void updateAccessInfoLoc(FLocation fLoc)
+	{
+		if ( ! isEnabled()) return;
+
+		Set<FPlayer> players = FPlayers.i.getOnline();
+
+		for (FPlayer player : players)
+		{
+			if (fLoc == null || player.getLastStoodAt().equals(fLoc))
+			mainListener.updateAccessInfo(player);
+		}
 	}
 
 	// update owner list for specified player
-	public static void updateOwnerList(FPlayer player)
+	public static boolean updateAccessInfo(FPlayer player)
 	{
-		if (!enabled())
-			return;
-
-		mainListener.updateOwnerList(player);
+		if ( ! isEnabled()) return false;
+		return mainListener.updateAccessInfo(player);
 	}
 
 	public static void playerDisconnect(FPlayer player)
 	{
-		if (!enabled())
-			return;
-
+		if ( ! isEnabled()) return;
 		mainListener.removeTerritoryLabels(player.getName());
-	}
-
-
-	// update all appearances between every player
-	public static void updateAppearances()
-	{
-		if (!enabled())
-		{
-			return;
-		}
-
-		Set<FPlayer> players = FPlayers.i.getOnline();
-		Faction factionA;
-
-		for (FPlayer playerA : players)
-		{
-			factionA = playerA.getFaction();
-			for (FPlayer playerB : players)
-			{
-				updateSingle(playerB.getPlayer(), playerA.getPlayer(), factionA.getRelationTo(playerB), factionA, playerA.getTitle(), playerA.getRole());
-			}
-		}
-	}
-
-	// update all appearances related to a specific player
-	public static void updateAppearances(Player player)
-	{
-		if (!enabled() || player == null)
-		{
-			return;
-		}
-
-		Set<FPlayer> players = FPlayers.i.getOnline();
-		FPlayer playerA = FPlayers.i.get(player);
-		Faction factionA = playerA.getFaction();
-
-		for (FPlayer playerB : players)
-		{
-			Player player2 = playerB.getPlayer();
-			Relation rel = factionA.getRelationTo(playerB);
-			updateSingle(player2, player, rel, factionA, playerA.getTitle(), playerA.getRole());
-			updateSingle(player, player2, rel, playerB.getFaction(), playerB.getTitle(), playerB.getRole());
-		}
-	}
-
-	// update all appearances related to a single faction
-	public static void updateAppearances(Faction faction)
-	{
-		if (!enabled() || faction == null)
-		{
-			return;
-		}
-
-		Set<FPlayer> players = FPlayers.i.getOnline();
-		Faction factionA, factionB;
-
-		for (FPlayer playerA : players)
-		{
-			factionA = playerA.getFaction();
-
-			for (FPlayer playerB : players)
-			{
-				factionB = playerB.getFaction();
-				if (factionA != faction && factionB != faction)
-				{
-					continue;
-				}
-				updateSingle(playerB.getPlayer(), playerA.getPlayer(), factionA.getRelationTo(factionB), factionA, playerA.getTitle(), playerA.getRole());
-			}
-		}
-	}
-
-	// update all appearances between two factions
-	public static void updateAppearances(Faction factionA, Faction factionB)
-	{
-		if (!enabled() || factionA == null || factionB == null)
-		{
-			return;
-		}
-
-		for (FPlayer playerA : factionA.getFPlayersWhereOnline(true))
-		{
-			for (FPlayer playerB : factionB.getFPlayersWhereOnline(true))
-			{
-				Player player1 = playerA.getPlayer();
-				Player player2 = playerB.getPlayer();
-				Relation rel = factionA.getRelationTo(factionB);
-				updateSingle(player2, player1, rel, factionA, playerA.getTitle(), playerA.getRole());
-				updateSingle(player1, player2, rel, factionB, playerB.getTitle(), playerB.getRole());
-			}
-		}
-	}
-
-
-	// update a single appearance; internal use only by above public methods
-	private static void updateSingle(Player viewer, Player viewed, Relation relation, Faction viewedFaction, String viewedTitle, Role viewedRole)
-	{
-		if (viewer == null || viewed == null)
-			return;
-
-		SpoutPlayer sPlayer = SpoutManager.getPlayer(viewer);
-
-		if ((Conf.spoutFactionTagsOverNames || Conf.spoutFactionTitlesOverNames) && viewer != viewed)
-		{
-			if (viewedFaction.isNormal())
-			{
-				String addTag = "";
-				if (Conf.spoutFactionTagsOverNames)
-				{
-					addTag += viewedFaction.getTag(relation.getColor().toString() + "[") + "]";
-				}
-				String rolePrefix = viewedRole.getPrefix();
-				if (Conf.spoutFactionTitlesOverNames && (!viewedTitle.isEmpty() || !rolePrefix.isEmpty()))
-				{
-					addTag += (addTag.isEmpty() ? "" : " ") + viewedRole.getPrefix() + viewedTitle;
-				}
-				spoutApp.setPlayerTitle(sPlayer, viewed, addTag + "\n" + viewed.getDisplayName());
-			}
-			else
-			{
-				spoutApp.setPlayerTitle(sPlayer, viewed, viewed.getDisplayName());
-			}
-		}
-
-		if
-		(
-			(
-				Conf.spoutFactionAdminCapes
-				&&
-				viewedRole.equals(Role.ADMIN)
-			)
-			|| 
-			(
-				Conf.spoutFactionModeratorCapes
-				&&
-				viewedRole.equals(Role.MODERATOR)
-			)
-		)
-		{
-			String cape = "";
-			if (!viewedFaction.isNormal())
-			{
-				// yeah, no cape if no faction
-			}
-			else if (viewedFaction.isPeaceful())
-			{
-				cape = Conf.capePeaceful;
-			}
-			else if (relation.isNeutral())
-			{
-				cape = Conf.capeNeutral;
-			}
-			else if (relation.isMember())
-			{
-				cape = Conf.capeMember;
-			}
-			else if (relation.isEnemy())
-			{
-				cape = Conf.capeEnemy;
-			}
-			else if (relation.isAlly())
-			{
-				cape = Conf.capeAlly;
-			}
-
-			if (cape.isEmpty())
-			{
-				spoutApp.resetPlayerCloak(sPlayer, viewed);
-			}
-			else
-			{
-				spoutApp.setPlayerCloak(sPlayer, viewed, cape);
-			}
-		}
-		else if (Conf.spoutFactionAdminCapes || Conf.spoutFactionModeratorCapes)
-		{
-			spoutApp.resetPlayerCloak(sPlayer, viewed);
-		}
-	}
-
-	// method to convert a Bukkit ChatColor to a Spout Color
-	protected static Color getSpoutColor(ChatColor inColor, int alpha)
-	{
-		if (inColor == null)
-		{
-			return SpoutFixedColor(191, 191, 191, alpha);
-		}
-		switch (inColor.getCode())
-		{
-			case 0x1:	return SpoutFixedColor(0, 0, 191, alpha);
-			case 0x2:	return SpoutFixedColor(0, 191, 0, alpha);
-			case 0x3:	return SpoutFixedColor(0, 191, 191, alpha);
-			case 0x4:	return SpoutFixedColor(191, 0, 0, alpha);
-			case 0x5:	return SpoutFixedColor(191, 0, 191, alpha);
-			case 0x6:	return SpoutFixedColor(191, 191, 0, alpha);
-			case 0x7:	return SpoutFixedColor(191, 191, 191, alpha);
-			case 0x8:	return SpoutFixedColor(64, 64, 64, alpha);
-			case 0x9:	return SpoutFixedColor(64, 64, 255, alpha);
-			case 0xA:	return SpoutFixedColor(64, 255, 64, alpha);
-			case 0xB:	return SpoutFixedColor(64, 255, 255, alpha);
-			case 0xC:	return SpoutFixedColor(255, 64, 64, alpha);
-			case 0xD:	return SpoutFixedColor(255, 64, 255, alpha);
-			case 0xE:	return SpoutFixedColor(255, 255, 64, alpha);
-			case 0xF:	return SpoutFixedColor(255, 255, 255, alpha);
-			default:	return SpoutFixedColor(0, 0, 0, alpha);
-		}
-	}
-	private static Color SpoutFixedColor(int r, int g, int b, int a)
-	{
-		return new Color(r/255.0f, g/255.0f, b/255.0f, a/255.0f);
 	}
 }

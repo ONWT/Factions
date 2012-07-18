@@ -13,10 +13,12 @@ import com.massivecraft.factions.FLocation;
 import com.massivecraft.factions.FPlayer;
 import com.massivecraft.factions.FPlayers;
 import com.massivecraft.factions.Faction;
+import com.massivecraft.factions.integration.EssentialsFeatures;
+import com.massivecraft.factions.struct.FFlag;
 import com.massivecraft.factions.struct.Permission;
-import com.massivecraft.factions.struct.Relation;
-import com.massivecraft.factions.struct.Role;
+import com.massivecraft.factions.struct.Rel;
 import com.massivecraft.factions.zcore.util.SmokeUtil;
+
 
 public class CmdHome extends FCommand
 {
@@ -34,8 +36,8 @@ public class CmdHome extends FCommand
 		
 		senderMustBePlayer = true;
 		senderMustBeMember = true;
-		senderMustBeModerator = false;
-		senderMustBeAdmin = false;
+		senderMustBeOfficer = false;
+		senderMustBeLeader = false;
 	}
 	
 	@Override
@@ -56,7 +58,7 @@ public class CmdHome extends FCommand
 		
 		if ( ! myFaction.hasHome())
 		{
-			fme.msg("<b>You faction does not have a home. " + (fme.getRole().value < Role.MODERATOR.value ? "<i> Ask your leader to:" : "<i>You should:"));
+			fme.msg("<b>Your faction does not have a home. " + (fme.getRole().isLessThan(Rel.OFFICER) ? "<i> Ask your leader to:" : "<i>You should:"));
 			fme.sendMessage(p.cmdBase.cmdSethome.getUseageTemplate());
 			return;
 		}
@@ -74,13 +76,14 @@ public class CmdHome extends FCommand
 		}
 		
 		Faction faction = Board.getFactionAt(new FLocation(me.getLocation()));
+		Location loc = me.getLocation().clone();
 		
 		// if player is not in a safe zone or their own faction territory, only allow teleport if no enemies are nearby
 		if
 		(
 			Conf.homesTeleportAllowedEnemyDistance > 0
 			&&
-			! faction.isSafeZone()
+			faction.getFlag(FFlag.PVP)
 			&&
 			(
 				! fme.isInOwnTerritory()
@@ -93,7 +96,6 @@ public class CmdHome extends FCommand
 			)
 		)
 		{
-			Location loc = me.getLocation();
 			World w = loc.getWorld();
 			double x = loc.getX();
 			double y = loc.getY();
@@ -105,7 +107,7 @@ public class CmdHome extends FCommand
 					continue;
 
 				FPlayer fp = FPlayers.i.get(p);
-				if (fme.getRelationTo(fp) != Relation.ENEMY)
+				if (fme.getRelationTo(fp) != Rel.ENEMY)
 					continue;
 
 				Location l = p.getLocation();
@@ -123,20 +125,23 @@ public class CmdHome extends FCommand
 			}
 		}
 
+		// if Essentials teleport handling is enabled and available, pass the teleport off to it (for delay and cooldown)
+		if (EssentialsFeatures.handleTeleport(me, myFaction.getHome())) return;
+
 		// if economy is enabled, they're not on the bypass list, and this command has a cost set, make 'em pay
-		if ( ! payForCommand(Conf.econCostHome, "to change faction home", "for changing faction home")) return;
+		if ( ! payForCommand(Conf.econCostHome, "to teleport to your faction home", "for teleporting to your faction home")) return;
 
 		// Create a smoke effect
 		if (Conf.homesTeleportCommandSmokeEffectEnabled)
 		{
 			List<Location> smokeLocations = new ArrayList<Location>();
-			smokeLocations.add(me.getLocation());
-			smokeLocations.add(me.getLocation().clone().add(0, 1, 0));
+			smokeLocations.add(loc);
+			smokeLocations.add(loc.add(0, 1, 0));
 			smokeLocations.add(myFaction.getHome());
 			smokeLocations.add(myFaction.getHome().clone().add(0, 1, 0));
-			SmokeUtil.spawnCloudRandom(smokeLocations, Conf.homesTeleportCommandSmokeEffectThickness);
+			SmokeUtil.spawnCloudRandom(smokeLocations, 3f);
 		}
-		
+
 		me.teleport(myFaction.getHome());
 	}
 	

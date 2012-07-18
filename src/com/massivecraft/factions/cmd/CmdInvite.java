@@ -2,6 +2,7 @@ package com.massivecraft.factions.cmd;
 
 import com.massivecraft.factions.Conf;
 import com.massivecraft.factions.FPlayer;
+import com.massivecraft.factions.struct.FPerm;
 import com.massivecraft.factions.struct.Permission;
 
 public class CmdInvite extends FCommand
@@ -12,7 +13,7 @@ public class CmdInvite extends FCommand
 		this.aliases.add("invite");
 		this.aliases.add("inv");
 		
-		this.requiredArgs.add("player name");
+		this.requiredArgs.add("player");
 		//this.optionalArgs.put("", "");
 		
 		this.permission = Permission.INVITE.node;
@@ -20,8 +21,8 @@ public class CmdInvite extends FCommand
 		
 		senderMustBePlayer = true;
 		senderMustBeMember = false;
-		senderMustBeModerator = true;
-		senderMustBeAdmin = false;
+		senderMustBeOfficer = true;
+		senderMustBeLeader = false;
 	}
 	
 	@Override
@@ -37,13 +38,15 @@ public class CmdInvite extends FCommand
 			return;
 		}
 
+		if (fme != null && ! FPerm.INVITE.has(fme, myFaction)) return;
+		
 		// if economy is enabled, they're not on the bypass list, and this command has a cost set, make 'em pay
 		if ( ! payForCommand(Conf.econCostInvite, "to invite someone", "for inviting someone")) return;
 
 		myFaction.invite(you);
 		
-		you.msg("%s<i> invited you to %s", fme.getNameAndRelevant(you), myFaction.getTag(you));
-		myFaction.msg("%s<i> invited %s<i> to your faction.", fme.getNameAndRelevant(fme), you.getNameAndRelevant(fme));
+		you.msg("%s<i> invited you to %s", fme.describeTo(you, true), myFaction.describeTo(you));
+		myFaction.msg("%s<i> invited %s<i> to your faction.", fme.describeTo(myFaction, true), you.describeTo(myFaction));
 	}
 	
 }

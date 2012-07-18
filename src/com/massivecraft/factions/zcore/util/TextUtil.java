@@ -1,6 +1,7 @@
 package com.massivecraft.factions.zcore.util;
 
 import java.util.*;
+import java.util.Map.Entry;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -75,14 +76,14 @@ public class TextUtil
 	public static String parseColorAmp(String string)
 	{
 		string = string.replaceAll("(§([a-z0-9]))", "\u00A7$2");
-	    string = string.replaceAll("(&([a-z0-9]))", "\u00A7$2");
-	    string = string.replace("&&", "&");
-	    return string;
+		string = string.replaceAll("(&([a-z0-9]))", "\u00A7$2");
+		string = string.replace("&&", "&");
+		return string;
 	}
 	
-    public static String parseColorAcc(String string)
-    {
-        return string.replace("`e", "")
+	public static String parseColorAcc(String string)
+	{
+		return string.replace("`e", "")
 		.replace("`r", ChatColor.RED.toString()) .replace("`R", ChatColor.DARK_RED.toString())
 		.replace("`y", ChatColor.YELLOW.toString()) .replace("`Y", ChatColor.GOLD.toString())
 		.replace("`g", ChatColor.GREEN.toString()) .replace("`G", ChatColor.DARK_GREEN.toString())
@@ -91,27 +92,27 @@ public class TextUtil
 		.replace("`p", ChatColor.LIGHT_PURPLE.toString()) .replace("`P", ChatColor.DARK_PURPLE.toString())
 		.replace("`k", ChatColor.BLACK.toString()) .replace("`s", ChatColor.GRAY.toString())
 		.replace("`S", ChatColor.DARK_GRAY.toString()) .replace("`w", ChatColor.WHITE.toString());
-    }
+	}
 	
 	public static String parseColorTags(String string)
 	{
-        return string.replace("<empty>", "")
-        .replace("<black>", "\u00A70")
-        .replace("<navy>", "\u00A71")
-        .replace("<green>", "\u00A72")
-        .replace("<teal>", "\u00A73")
-        .replace("<red>", "\u00A74")
-        .replace("<purple>", "\u00A75")
-        .replace("<gold>", "\u00A76")
-        .replace("<silver>", "\u00A77")
-        .replace("<gray>", "\u00A78")
-        .replace("<blue>", "\u00A79")
-        .replace("<lime>", "\u00A7a")
-        .replace("<aqua>", "\u00A7b")
-        .replace("<rose>", "\u00A7c")
-        .replace("<pink>", "\u00A7d")
-        .replace("<yellow>", "\u00A7e")
-        .replace("<white>", "\u00A7f");
+		return string.replace("<empty>", "")
+		.replace("<black>", "\u00A70")
+		.replace("<navy>", "\u00A71")
+		.replace("<green>", "\u00A72")
+		.replace("<teal>", "\u00A73")
+		.replace("<red>", "\u00A74")
+		.replace("<purple>", "\u00A75")
+		.replace("<gold>", "\u00A76")
+		.replace("<silver>", "\u00A77")
+		.replace("<gray>", "\u00A78")
+		.replace("<blue>", "\u00A79")
+		.replace("<lime>", "\u00A7a")
+		.replace("<aqua>", "\u00A7b")
+		.replace("<rose>", "\u00A7c")
+		.replace("<pink>", "\u00A7d")
+		.replace("<yellow>", "\u00A7e")
+		.replace("<white>", "\u00A7f");
 	}
 	
 	// -------------------------------------------- //
@@ -123,24 +124,42 @@ public class TextUtil
 		return string.substring(0, 1).toUpperCase()+string.substring(1);
 	}
 	
-	public static String implode(List<String> list, String glue)
-	{
-	    StringBuilder ret = new StringBuilder();
-	    for (int i=0; i<list.size(); i++)
-	    {
-	        if (i!=0)
-	        {
-	        	ret.append(glue);
-	        }
-	        ret.append(list.get(i));
-	    }
-	    return ret.toString();
-	}
-	
 	public static String repeat(String s, int times)
 	{
-	    if (times <= 0) return "";
-	    else return s + repeat(s, times-1);
+		if (times <= 0) return "";
+		else return s + repeat(s, times-1);
+	}
+	
+	public static String implode(List<String> list, String glue)
+	{
+		StringBuilder ret = new StringBuilder();
+		for (int i=0; i<list.size(); i++)
+		{
+			if (i!=0)
+			{
+				ret.append(glue);
+			}
+			ret.append(list.get(i));
+		}
+		return ret.toString();
+	}
+	
+	public static String implodeCommaAnd(List<String> list, String comma, String and)
+	{
+		if (list.size() == 0) return "";
+		if (list.size() == 1) return list.get(0);
+		
+		String lastItem = list.get(list.size()-1);
+		String nextToLastItem = list.get(list.size()-2);
+		String merge = nextToLastItem+and+lastItem;
+		list.set(list.size()-2, merge);
+		list.remove(list.size()-1);
+		
+		return implode(list, comma);
+	}
+	public static String implodeCommaAnd(List<String> list)
+	{
+		return implodeCommaAnd(list, ", ", " and ");
 	}
 	
 	// -------------------------------------------- //
@@ -224,60 +243,83 @@ public class TextUtil
 	public static final long millisPerWeek   =    7 * millisPerDay;
 	public static final long millisPerMonth  =   31 * millisPerDay;
 	public static final long millisPerYear   =  365 * millisPerDay;
+	
+	public static Map<String, Long> unitMillis;
+	
+	static
+	{
+		unitMillis = new LinkedHashMap<String, Long>();
+		unitMillis.put("years", millisPerYear);
+		unitMillis.put("months", millisPerMonth);
+		unitMillis.put("weeks", millisPerWeek);
+		unitMillis.put("days", millisPerDay);
+		unitMillis.put("hours", millisPerHour);
+		unitMillis.put("minutes", millisPerMinute);
+		unitMillis.put("seconds", millisPerSecond);
+	}
+	
 	public static String getTimeDeltaDescriptionRelNow(long millis)
 	{
-		double absmillis = (double) Math.abs(millis);
-		String agofromnow = "from now";
-		String unit;
-		long num;
-		if (millis <= 0)
+		String ret = "";
+		
+		double millisLeft = (double) Math.abs(millis);
+		
+		List<String> unitCountParts = new ArrayList<String>();
+		for (Entry<String, Long> entry : unitMillis.entrySet())
 		{
-			agofromnow = "ago";
+			if (unitCountParts.size() == 3 ) break;
+			String unitName = entry.getKey();
+			long unitSize = entry.getValue();
+			long unitCount = (long) Math.floor(millisLeft / unitSize);
+			if (unitCount < 1) continue;
+			millisLeft -= unitSize*unitCount;
+			unitCountParts.add(unitCount+" "+unitName);
 		}
 		
-		// We use a factor 3 below for a reason... why do you think?
-		// Answer: it is a way to make our round of error smaller.
-		if (absmillis < 3 * millisPerSecond)
+		if (unitCountParts.size() == 0) return "just now";
+		
+		ret += implodeCommaAnd(unitCountParts);
+		ret += " ";
+		if (millis <= 0)
 		{
-			unit = "milliseconds";
-			num = (long) (absmillis);
-		}
-		else if (absmillis < 3 * millisPerMinute)
-		{
-			unit = "seconds";
-			num = (long) (absmillis / millisPerSecond);
-		}
-		else if (absmillis < 3 * millisPerHour)
-		{
-			unit = "minutes";
-			num = (long) (absmillis / millisPerMinute);
-		}
-		else if (absmillis <  3 * millisPerDay)
-		{
-			unit = "hours";
-			num = (long) (absmillis / millisPerHour);
-		}
-		else if (absmillis < 3 * millisPerWeek)
-		{
-			unit = "days";
-			num = (long) (absmillis / millisPerDay);
-		}
-		else if (absmillis < 3 * millisPerMonth)
-		{
-			unit = "weeks";
-			num = (long) (absmillis / millisPerWeek);
-		}
-		else if (absmillis < 3 * millisPerYear)
-		{
-			unit = "months";
-			num = (long) (absmillis / millisPerMonth);
+			ret += "ago";
 		}
 		else
 		{
-			unit = "years";
-			num = (long) (absmillis / millisPerYear);
+			ret += "from now";
 		}
 		
-		return ""+num+" "+unit+" "+agofromnow;
+		return ret;
+	}
+	
+	// -------------------------------------------- //
+	// String comparison
+	// -------------------------------------------- //
+	
+	public static String getBestStartWithCI(Collection<String> candidates, String start)
+	{
+		String ret = null;
+		int best = 0;
+		
+		start = start.toLowerCase();
+		int minlength = start.length();
+		for (String candidate : candidates)
+		{
+			if (candidate.length() < minlength) continue;
+			if ( ! candidate.toLowerCase().startsWith(start)) continue;
+			
+			// The closer to zero the better
+			int lendiff = candidate.length() - minlength;
+			if (lendiff == 0)
+			{
+				return candidate;
+			}
+			if (lendiff < best || best == 0)
+			{
+				best = lendiff;
+				ret = candidate;
+			}
+		}
+		return ret;
 	}
 }
